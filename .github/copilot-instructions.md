@@ -14,6 +14,13 @@ ls openspec/config.yaml && cat openspec/config.yaml  # SDD context
 3. If there IS an active SDD change → resume it (`sdd status`) before coding.
 4. At session end → `bash ~/.copilot/hooks/copilot/session-end.sh`
 
+**Protected branches (main, develop) — PR ONLY:**
+- NEVER `git merge` locally onto main or develop.
+- NEVER `git commit` or `git push` directly to main or develop.
+- Feature work → `gh pr create --base develop --title "<tipo>: <descripción>"`
+- Release → `gh pr create --base main --title "release: vX.Y.Z"`
+- After PR is merged on GitHub → `git checkout develop && git pull` to sync locally.
+
 **Never implement a feature without an active SDD change unless the user explicitly skips SDD.**
 
 ---
