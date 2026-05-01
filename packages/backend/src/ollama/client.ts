@@ -116,17 +116,17 @@ export class OllamaClient {
     }
   }
 
-  async embed(text: string, model = config.OLLAMA_EMBED_MODEL): Promise<number[]> {
+  async embed(model: string, texts: string[]): Promise<number[][]> {
     const res = await fetch(`${this.baseUrl}/api/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, input: text }),
+      body: JSON.stringify({ model, input: texts }),
     });
     if (!res.ok) {
       throw new Error(`Ollama embed error ${res.status}: ${await res.text()}`);
     }
     const data = (await res.json()) as OllamaEmbedResponse;
-    return data.embeddings[0] ?? [];
+    return data.embeddings;
   }
 }
 
