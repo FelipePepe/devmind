@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readdirSync, statSync, readFileSync, realpathSync } from 'node:fs';
-import pino from 'pino';
 import { chunkText } from '../vector/chunker.js';
 import { embedTexts } from '../vector/embed-client.js';
 import { VectorIndexStore } from '../vector/index-store.js';
 import type { JobQueueClient } from '../jobs.js';
-
-const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
+import { logger } from '../logger.js';
 
 export interface IndexCodebasePayload {
   repoPath: string;
   sessionId: string;
 }
+
+const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', '.next', '.turbo']);
 
 function collectFiles(dir: string, exts: string[], realRoot: string, visited = new Set<string>()): string[] {
   const results: string[] = [];
@@ -23,8 +23,14 @@ function collectFiles(dir: string, exts: string[], realRoot: string, visited = n
     visited.add(realDir);
     for (const entry of readdirSync(dir)) {
       const fullPath = join(dir, entry);
-      const stat = statSync(fullPath);
-      if (stat.isDirectory() && !entry.startsWith('.') && entry !== 'node_modules') {
+      let stat: ReturnType<typeof statSync>;
+      try {
+        stat = statSync(fullPath);
+      } catch (err) {
+        logger.warn({ file: fullPath, err }, 'statSync failed — skipping entry');
+        continue;
+      }
+      if (stat.isDirectory() && !entry.startsWith('.') && !EXCLUDED_DIRS.has(entry)) {
         results.push(...collectFiles(fullPath, exts, realRoot, visited));
       } else if (exts.some((ext) => entry.endsWith(ext))) {
         try {
@@ -62,6 +68,8 @@ export async function indexCodebase(
     join(vectorDbPath, 'chunks.db'),
     join(vectorDbPath, 'index.hnsw')
   );
+  let rebuildDone = false;
+
   try {
     await store.init();
     const realRepoRoot = realpathSync(payload.repoPath);
@@ -128,6 +136,7 @@ export async function indexCodebase(
 
     logger.info({ indexed, skipped }, 'Indexing complete');
 
+    let rebuildHappened = false;
     if (store.shouldRebuild()) {
       logger.info('HNSW delete ratio exceeded threshold — triggering full rebuild');
       const allFilePaths = store.getAllFilePaths();
@@ -145,6 +154,16 @@ export async function indexCodebase(
           continue;
         }
 
+        // Load embeddings from DB for unchanged files to avoid re-embedding (FIX-5)
+        const stored = store.getFileChunksAndEmbeddings(filePath);
+        if (stored) {
+          rebuildChunks.push(...stored.chunks);
+          rebuildEmbeddings.push(...stored.embeddings);
+          rebuildFileHashes.set(filePath, stored.fileHash);
+          continue;
+        }
+
+        // Fall back to re-reading and re-embedding (legacy rows with empty blobs, or DB miss)
         let rebuildContent: string;
         try {
           rebuildContent = readFileSync(filePath, 'utf8');
@@ -168,13 +187,26 @@ export async function indexCodebase(
       }
 
       store.rebuildIndex(rebuildChunks, rebuildEmbeddings, rebuildFileHashes);
+      rebuildDone = true;
+      rebuildHappened = true;
       logger.info({ chunkCount: rebuildChunks.length }, 'HNSW index rebuilt successfully');
     }
 
-    store.saveIndex();
+    // Only persist the HNSW file if something actually changed (FIX-11)
+    if (indexed > 0 || rebuildHappened) {
+      store.saveIndex();
+    }
     jobs.updateStatus(jobId, 'done');
   } catch (err) {
     logger.error({ err, jobId }, 'indexCodebase failed — preserving last good on-disk index');
+    // If rebuild committed to DB but saveIndex() (or something after it) failed, force the next
+    // run to rebuild so the on-disk HNSW file is brought back in sync with the DB (FIX-6).
+    if (rebuildDone) {
+      store.markRebuildNeeded();
+      logger.warn({ jobId }, 'Rebuild completed but post-rebuild step failed — HNSW file may be stale, next run will rebuild');
+    }
     jobs.updateStatus(jobId, 'failed');
+  } finally {
+    store.close();
   }
 }

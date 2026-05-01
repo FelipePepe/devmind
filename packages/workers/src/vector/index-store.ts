@@ -1,10 +1,8 @@
 import { existsSync, unlinkSync } from 'node:fs';
 import { HierarchicalNSW } from 'hnswlib-node';
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import type { Chunk } from './chunker.js';
-
-const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
+import { logger } from '../logger.js';
 
 const HNSW_DIMENSIONS = 768;
 const HNSW_MAX_ELEMENTS = 100_000;
@@ -20,13 +18,14 @@ interface ChunkRow {
   end_offset: number;
   text: string;
   hnsw_label: number;
+  embedding: Buffer;
 }
 
 export class VectorIndexStore {
   private db: Database.Database;
   private hnsw: HierarchicalNSW;
   private initialized = false;
-  private countChunksStmt!: Database.Statement;
+  private countChunksStmt: Database.Statement | undefined;
   private _forceRebuild = false;
 
   constructor(
@@ -37,10 +36,15 @@ export class VectorIndexStore {
     this.hnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
   }
 
+  private _assertInitialized(): void {
+    if (!this.initialized) throw new Error('VectorIndexStore must be awaited with init() before use');
+  }
+
   async init(): Promise<void> {
     if (this.initialized) return;
 
     this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,39 +55,38 @@ export class VectorIndexStore {
         end_offset   INTEGER NOT NULL,
         text         TEXT    NOT NULL,
         hnsw_label   INTEGER NOT NULL UNIQUE,
-        indexed_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+        indexed_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+        embedding    BLOB    NOT NULL DEFAULT X''
       );
       CREATE INDEX IF NOT EXISTS idx_chunks_file_path  ON chunks(file_path);
       CREATE INDEX IF NOT EXISTS idx_chunks_hnsw_label ON chunks(hnsw_label);
     `);
+
+    // Migrate existing DBs that don't have the embedding column yet.
+    try {
+      this.db.exec(`ALTER TABLE chunks ADD COLUMN embedding BLOB NOT NULL DEFAULT X''`);
+    } catch {
+      // Column already exists — ignore duplicate column name error.
+    }
 
     if (existsSync(this.hnswPath)) {
       try {
         await this.hnsw.readIndex(this.hnswPath);
         logger.info({ hnswPath: this.hnswPath }, 'HNSW index loaded');
       } catch (err) {
-        logger.warn({ err }, 'HNSW index corrupt — rebuilding from scratch');
-        this.db.close();
-        this._deleteStoreFiles();
-        this.db = new Database(this.dbPath);
-        this.db.pragma('journal_mode = WAL');
-        this.db.exec(`
-          CREATE TABLE IF NOT EXISTS chunks (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path    TEXT    NOT NULL,
-            file_hash    TEXT    NOT NULL,
-            chunk_hash   TEXT    NOT NULL,
-            start_offset INTEGER NOT NULL,
-            end_offset   INTEGER NOT NULL,
-            text         TEXT    NOT NULL,
-            hnsw_label   INTEGER NOT NULL UNIQUE,
-            indexed_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
-          );
-          CREATE INDEX IF NOT EXISTS idx_chunks_file_path  ON chunks(file_path);
-          CREATE INDEX IF NOT EXISTS idx_chunks_hnsw_label ON chunks(hnsw_label);
-        `);
+        // Keep the DB intact. Only delete the corrupt HNSW file and rebuild on next run.
+        logger.warn(
+          { err, event: 'hnsw_corrupt_recovery', strategy: 'keep_db_force_rebuild' },
+          'HNSW index corrupt — deleting HNSW file only, keeping DB, scheduling rebuild'
+        );
+        try {
+          unlinkSync(this.hnswPath);
+        } catch (unlinkErr) {
+          logger.error({ err: unlinkErr, hnswPath: this.hnswPath }, 'Failed to delete corrupt HNSW file');
+        }
         this.hnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
         this.hnsw.initIndex(HNSW_MAX_ELEMENTS);
+        this._forceRebuild = true;
       }
     } else {
       this.hnsw.initIndex(HNSW_MAX_ELEMENTS);
@@ -94,6 +97,7 @@ export class VectorIndexStore {
   }
 
   getFileHashes(): Map<string, string> {
+    this._assertInitialized();
     const rows = this.db
       .prepare('SELECT file_path, MAX(file_hash) as file_hash FROM chunks GROUP BY file_path ORDER BY MAX(indexed_at) DESC')
       .all() as Array<{ file_path: string; file_hash: string }>;
@@ -101,6 +105,7 @@ export class VectorIndexStore {
   }
 
   deleteChunksByFile(filePath: string): void {
+    this._assertInitialized();
     const rows = this.db
       .prepare('SELECT hnsw_label FROM chunks WHERE file_path = ?')
       .all(filePath) as Array<{ hnsw_label: number }>;
@@ -138,10 +143,11 @@ export class VectorIndexStore {
   }
 
   addChunks(chunks: Chunk[], embeddings: number[][], fileHash: string): void {
+    this._assertInitialized();
     const nextLabel = this._nextHnswLabel();
     const insert = this.db.prepare(`
-      INSERT INTO chunks (file_path, file_hash, chunk_hash, start_offset, end_offset, text, hnsw_label)
-      VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel)
+      INSERT INTO chunks (file_path, file_hash, chunk_hash, start_offset, end_offset, text, hnsw_label, embedding)
+      VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel, @embedding)
     `);
 
     const pendingPoints: Array<{ label: number; embedding: number[] }> = [];
@@ -161,6 +167,7 @@ export class VectorIndexStore {
           endOffset: chunk.endOffset,
           text: chunk.text,
           hnswLabel,
+          embedding: Buffer.from(new Float32Array(embedding).buffer),
         });
         pendingPoints.push({ label: hnswLabel, embedding });
       }
@@ -183,16 +190,70 @@ export class VectorIndexStore {
   }
 
   getAllFilePaths(): Set<string> {
+    this._assertInitialized();
     const rows = this.db
       .prepare('SELECT DISTINCT file_path FROM chunks')
       .all() as Array<{ file_path: string }>;
     return new Set(rows.map((r) => r.file_path));
   }
 
+  /**
+   * Returns stored chunks and embeddings for a file from the DB.
+   * Returns null if no rows exist or any row has an empty embedding blob (legacy — needs re-embedding).
+   */
+  getFileChunksAndEmbeddings(
+    filePath: string
+  ): { chunks: Chunk[]; embeddings: number[][]; fileHash: string } | null {
+    this._assertInitialized();
+    const rows = this.db
+      .prepare(
+        'SELECT chunk_hash, file_hash, start_offset, end_offset, text, hnsw_label, embedding FROM chunks WHERE file_path = ? ORDER BY hnsw_label'
+      )
+      .all(filePath) as Array<{
+        chunk_hash: string;
+        file_hash: string;
+        start_offset: number;
+        end_offset: number;
+        text: string;
+        hnsw_label: number;
+        embedding: Buffer;
+      }>;
+
+    if (rows.length === 0) return null;
+
+    // Any empty blob means a legacy row — fall back to re-embedding the entire file.
+    for (const row of rows) {
+      if (row.embedding.length === 0) return null;
+    }
+
+    const fileHash = rows[0]!.file_hash;
+    const chunks: Chunk[] = rows.map((row) => ({
+      filePath,
+      hash: row.chunk_hash,
+      startOffset: row.start_offset,
+      endOffset: row.end_offset,
+      text: row.text,
+    }));
+    const embeddings: number[][] = rows.map((row) =>
+      Array.from(new Float32Array(new Uint8Array(row.embedding).buffer))
+    );
+
+    return { chunks, embeddings, fileHash };
+  }
+
   searchKnn(
     queryEmbedding: number[],
     k: number
   ): Array<{ hnswLabel: number; score: number }> {
+    this._assertInitialized();
+    if (queryEmbedding.length !== HNSW_DIMENSIONS) {
+      logger.warn(
+        { got: queryEmbedding.length, expected: HNSW_DIMENSIONS },
+        'searchKnn: wrong embedding dimensions — returning empty results'
+      );
+      return [];
+    }
+
     const total = this.hnsw.getCurrentCount();
     if (total === 0) return [];
 
@@ -214,11 +275,13 @@ export class VectorIndexStore {
   }
 
   saveIndex(): void {
+    this._assertInitialized();
     this.hnsw.writeIndexSync(this.hnswPath);
     logger.info({ hnswPath: this.hnswPath }, 'HNSW index saved');
   }
 
   shouldRebuild(): boolean {
+    this._assertInitialized();
     if (this._forceRebuild) {
       logger.warn('Forced rebuild due to previous deleteChunksByFile DB failure');
       // NOTE: _forceRebuild is cleared in rebuildIndex() after success, not here.
@@ -226,7 +289,7 @@ export class VectorIndexStore {
       return true;
     }
     const hnswTotal = this.hnsw.getCurrentCount();
-    const { count: activeCount } = this.countChunksStmt.get() as { count: number };
+    const { count: activeCount } = this.countChunksStmt!.get() as { count: number };
     if (hnswTotal === 0) {
       if (activeCount > 0) {
         logger.warn({ activeCount }, 'HNSW is empty but DB has active chunks — forcing rebuild');
@@ -247,6 +310,7 @@ export class VectorIndexStore {
     allEmbeddings: number[][],
     fileHashes: Map<string, string>
   ): void {
+    this._assertInitialized();
     logger.info('Rebuilding HNSW index from scratch');
     const newHnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
     newHnsw.initIndex(Math.max(HNSW_MAX_ELEMENTS, allChunks.length + 1000));
@@ -263,8 +327,8 @@ export class VectorIndexStore {
     }
 
     const insert = this.db.prepare(`
-      INSERT INTO chunks (file_path, file_hash, chunk_hash, start_offset, end_offset, text, hnsw_label)
-      VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel)
+      INSERT INTO chunks (file_path, file_hash, chunk_hash, start_offset, end_offset, text, hnsw_label, embedding)
+      VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel, @embedding)
     `);
     const pendingPoints: Array<{ label: number; embedding: number[] }> = [];
 
@@ -290,6 +354,7 @@ export class VectorIndexStore {
             endOffset: chunk.endOffset,
             text: chunk.text,
             hnswLabel,
+            embedding: Buffer.from(new Float32Array(embedding).buffer),
           });
           pendingPoints.push({ label: hnswLabel, embedding });
         }
@@ -298,6 +363,7 @@ export class VectorIndexStore {
 
     rebuildTx(); // If this throws, newHnsw is discarded — this.hnsw remains valid
 
+    let failedAddPoints = 0;
     for (const { label, embedding } of pendingPoints) {
       if (label >= newHnsw.getMaxElements()) {
         newHnsw.resizeIndex(newHnsw.getMaxElements() + 10_000);
@@ -305,15 +371,30 @@ export class VectorIndexStore {
       try {
         newHnsw.addPoint(embedding, label);
       } catch (err) {
-        logger.warn({ err, hnswLabel: label }, 'hnsw.addPoint failed during rebuild — will recover on next shouldRebuild check');
+        failedAddPoints++;
+        logger.warn({ err, hnswLabel: label }, 'hnsw.addPoint failed during rebuild');
       }
     }
 
+    if (failedAddPoints > 0) {
+      logger.error(
+        { failedAddPoints, total: pendingPoints.length },
+        'rebuildIndex: some addPoint calls failed — scheduling next run to rebuild again'
+      );
+      this._forceRebuild = true;
+    } else {
+      this._forceRebuild = false;
+    }
+
     this.hnsw = newHnsw;
-    this._forceRebuild = false;
+  }
+
+  markRebuildNeeded(): void {
+    this._forceRebuild = true;
   }
 
   getChunksByLabels(labels: number[]): ChunkRow[] {
+    this._assertInitialized();
     if (labels.length === 0) return [];
     const SQLITE_MAX_VARS = 999;
     const rowMap = new Map<number, ChunkRow>();
@@ -331,6 +412,10 @@ export class VectorIndexStore {
     });
   }
 
+  close(): void {
+    this.db.close();
+  }
+
   private _nextHnswLabel(): number {
     const row = this.db
       .prepare('SELECT MAX(hnsw_label) as max_label FROM chunks')
@@ -339,14 +424,24 @@ export class VectorIndexStore {
   }
 
   private _deleteStoreFiles(): void {
-    try {
-      if (existsSync(this.dbPath)) unlinkSync(this.dbPath);
-      if (existsSync(this.dbPath + '-wal')) unlinkSync(this.dbPath + '-wal');
-      if (existsSync(this.dbPath + '-shm')) unlinkSync(this.dbPath + '-shm');
-      if (existsSync(this.hnswPath)) unlinkSync(this.hnswPath);
-    } catch (err) {
-      logger.error({ err }, 'Failed to delete corrupt store files — cannot recover');
-      throw err;
+    const failures: Array<{ file: string; err: unknown }> = [];
+    // Delete HNSW first to prevent a stale index being loaded with a freshly re-created empty DB.
+    const filesToDelete = [
+      this.hnswPath,
+      this.dbPath + '-shm',
+      this.dbPath + '-wal',
+      this.dbPath,
+    ];
+    for (const file of filesToDelete) {
+      try {
+        if (existsSync(file)) unlinkSync(file);
+      } catch (err) {
+        logger.error({ err, failedFile: file }, 'Failed to delete corrupt store file');
+        failures.push({ file, err });
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Failed to delete store files: ${failures.map((f) => f.file).join(', ')}`);
     }
   }
 }
