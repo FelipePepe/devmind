@@ -1,0 +1,79 @@
+# openspec/config.yaml — DevMind SDD Configuration
+schema: spec-driven
+project: devmind
+
+context: |
+  Tech stack: Hono + Node.js (TypeScript strict), React, pnpm monorepo
+  Architecture: Backend (packages/backend), Frontend (packages/frontend), Workers sidecar (packages/workers)
+  LLM: Ollama local (qwen2.5-coder, qwen3, nomic-embed-text) via LangGraph
+  Persistence: SQLite (better-sqlite3) + hnswlib-node vector store
+  Auth: Passkeys / WebAuthn (no passwords), JWT sessions
+  Realtime: WebSockets bidirectional + Web Push notifications
+  Storage: Local filesystem (NAS/maya)
+  Jobs: SQLite-backed queue (separate sidecar process)
+  Features: Feature flags via SQLite table, multi-user
+  Network: .casa intranet only, secrets via Infisical (devmind-pxgt)
+
+strict_tdd: false
+
+testing:
+  strict_tdd: false
+  detected: "2025-01-01"
+  note: "No test runner found — install vitest to enable Strict TDD Mode"
+  runner:
+    framework: NOT FOUND
+    command: ~
+  layers:
+    unit:
+      available: false
+      tool: ~
+    integration:
+      available: false
+      tool: ~
+    e2e:
+      available: false
+      tool: ~
+  coverage:
+    available: false
+    command: ~
+  quality:
+    linter:
+      available: false
+      command: ~
+    type_checker:
+      available: true
+      command: "pnpm -r build (tsc)"
+    formatter:
+      available: false
+      command: ~
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected packages in monorepo (backend/frontend/workers)
+    - Consider Infisical secret requirements for new services
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Reference package paths (packages/backend/src/...)
+  design:
+    - Include sequence diagrams for complex flows (WebSocket, LangGraph agent flows)
+    - Document architecture decisions with rationale
+    - Consider WebAuthn / Passkeys auth flow implications
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+    - Tag by package: [backend], [frontend], [workers]
+  apply:
+    - Follow existing TypeScript strict conventions (exactOptionalPropertyTypes, noUncheckedIndexedAccess)
+    - Use Zod for all input validation
+    - Use Pino for structured logging
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: "pnpm -r build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas (large removals)
