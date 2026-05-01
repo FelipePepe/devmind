@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
-import { HierarchicalNSW } from 'hnswlib-node';
+import hnswlib from 'hnswlib-node';
+type HierarchicalNSW = InstanceType<typeof hnswlib.HierarchicalNSW>;
+const { HierarchicalNSW } = hnswlib;
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { ollamaClient } from '../../ollama/client.js';
@@ -107,8 +109,8 @@ export const vectorSearchTool: ToolDef = {
       .prepare(`SELECT hnsw_label, file_path, start_offset, end_offset, text FROM chunks WHERE hnsw_label IN (${placeholders})`)
       .all(...neighbors) as ChunkRow[];
 
-    const labelToScore = new Map(
-      neighbors.map((label, i) => [label, 1 - (distances[i] ?? 0)])
+    const labelToScore = new Map<number, number>(
+      neighbors.map((label, i): [number, number] => [label, 1 - (distances[i] ?? 0)])
     );
 
     const results: VectorSearchResult[] = rows
