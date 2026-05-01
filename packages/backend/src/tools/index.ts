@@ -3,6 +3,7 @@ import { fileReadTool } from './impl/file-read.js';
 import { fileListTool } from './impl/file-list.js';
 import { searchCodeTool } from './impl/search-code.js';
 import { runCommandTool } from './impl/run-command.js';
+import { vectorSearchTool } from './impl/vector-search.js';
 import {
   createSessionHistoryTool,
   createTaskUpdateTool,
@@ -26,6 +27,7 @@ export function createToolRegistry(services: ToolServices, userId: string): Tool
     fileListTool,
     searchCodeTool,
     runCommandTool,
+    vectorSearchTool,
     createSessionHistoryTool(services.messages, services.sessions, userId),
     createTaskUpdateTool(services.tasks),
     createArtifactListTool(services.storage, userId)
