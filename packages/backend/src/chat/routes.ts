@@ -9,6 +9,7 @@ import { logger } from '../logger.js';
 import type { SessionsRepo } from '../db/repos/sessions.js';
 import type { MessagesRepo } from '../db/repos/messages.js';
 import type { TasksRepo } from '../db/repos/tasks.js';
+import type { AgentRunsRepo } from '../db/repos/agent-runs.js';
 import type { StorageService } from '../storage/storage.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
@@ -30,6 +31,7 @@ export interface ChatRouterDeps {
   sessions: SessionsRepo;
   messages: MessagesRepo;
   tasks: TasksRepo;
+  agentRuns: AgentRunsRepo;
   storage: StorageService;
 }
 
@@ -74,6 +76,9 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
         data: JSON.stringify({ messageId: userMsg.id }),
       });
 
+      // Create agent run record
+      const agentRun = deps.agentRuns.create(sessionId, userId, config.OLLAMA_CODING_MODEL);
+
       const registry = createToolRegistry(
         { sessions: deps.sessions, messages: deps.messages, tasks: deps.tasks, storage: deps.storage },
         userId
@@ -98,30 +103,41 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
             await stream.writeSSE({ event: 'tool_call', data: JSON.stringify({ name, args }) });
           },
           async onToolResult(result) {
+            // Persist tool message for traceability
+            deps.messages.create(sessionId, 'tool', result.content, agentRun.id);
             await stream.writeSSE({
               event: 'tool_result',
               data: JSON.stringify({ name: result.name, content: result.content, error: result.error }),
             });
           },
-          async onDone() {
+          async onDone(iterations) {
+            deps.agentRuns.finish(agentRun.id, iterations);
             const assistantMsg = deps.messages.create(
               sessionId,
               'assistant',
-              assistantContent || '(empty response)'
+              assistantContent || '(empty response)',
+              agentRun.id
             );
             await stream.writeSSE({
               event: 'done',
-              data: JSON.stringify({ messageId: assistantMsg.id }),
+              data: JSON.stringify({ messageId: assistantMsg.id, agentRunId: agentRun.id }),
             });
           },
-          async onError(err) {
-            logger.error({ err, sessionId, userId }, 'Chat agent error');
+          async onError(err, iterations) {
+            deps.agentRuns.fail(agentRun.id, err.message, iterations);
+            logger.error({ err, sessionId, userId, agentRunId: agentRun.id }, 'Chat agent error');
             await stream
               .writeSSE({ event: 'error', data: JSON.stringify({ message: err.message }) })
               .catch(() => null);
           },
         },
       });
+
+      // Handle client disconnect — mark run as cancelled if still running
+      if (abort.signal.aborted) {
+        const run = deps.agentRuns.findById(agentRun.id);
+        if (run?.status === 'running') deps.agentRuns.cancel(agentRun.id);
+      }
     });
   });
 

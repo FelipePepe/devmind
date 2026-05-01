@@ -17,6 +17,7 @@ import { FlagsRepo } from './db/repos/flags.js';
 import { JobsRepo } from './db/repos/jobs.js';
 import { SubscriptionsRepo } from './db/repos/subscriptions.js';
 import { ChallengesRepo } from './db/repos/challenges.js';
+import { AgentRunsRepo } from './db/repos/agent-runs.js';
 
 // Services
 import { StorageService } from './storage/storage.js';
@@ -46,6 +47,7 @@ const flags = new FlagsRepo(db);
 const jobs = new JobsRepo(db);
 const subscriptions = new SubscriptionsRepo(db);
 const challenges = new ChallengesRepo(db);
+const agentRuns = new AgentRunsRepo(db);
 
 const storage = new StorageService(artifacts);
 const flagsService = new FlagsService(flags);
@@ -72,7 +74,7 @@ app.route('/api/artifacts', createStorageRouter(storage));
 app.route('/', createFlagsRouter(flagsService));
 app.route('/admin', createAdminRouter(users, jobs));
 app.route('/api/sessions', createSessionsRouter(sessions, messages));
-app.route('/api/chat', createChatRouter({ sessions, messages, tasks, storage }));
+app.route('/api/chat', createChatRouter({ sessions, messages, tasks, agentRuns, storage }));
 app.route('/', createRealtimeRouter(wsManager, push));
 
 const server = serve(
