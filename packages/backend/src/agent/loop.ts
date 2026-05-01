@@ -12,8 +12,8 @@ export interface AgentCallbacks {
   onToken(content: string): Promise<void>;
   onToolCall(name: string, args: string): Promise<void>;
   onToolResult(result: ToolResult): Promise<void>;
-  onDone(): Promise<void>;
-  onError(err: Error): Promise<void>;
+  onDone(iterations: number): Promise<void>;
+  onError(err: Error, iterations: number): Promise<void>;
 }
 
 export interface AgentLoopOptions {
@@ -67,7 +67,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return;
       logger.error({ err, iteration }, 'Agent loop stream error');
-      await callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+      await callbacks.onError(err instanceof Error ? err : new Error(String(err)), iteration);
       return;
     }
 
@@ -88,7 +88,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     messages.push(assistantMsg);
 
     if (finishReason !== 'tool_calls' || pendingToolCalls.length === 0) {
-      await callbacks.onDone();
+      await callbacks.onDone(iteration + 1);
       return;
     }
 
@@ -113,5 +113,5 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
   // Max iterations reached — treat as done
   logger.warn({ sessionId: ctx.sessionId }, 'Agent loop hit max iterations');
-  await callbacks.onDone();
+  await callbacks.onDone(MAX_ITERATIONS);
 }

@@ -5,10 +5,16 @@
 ```bash
 bash ~/.copilot/hooks/copilot/session-start.sh   # engram context
 bash ~/.copilot/hooks/copilot/gitflow-check.sh   # verify branch
+ls openspec/config.yaml && cat openspec/config.yaml  # SDD context
 ```
 
-**If gitflow-check fails or says "no git repo" → fix branch/init git BEFORE touching any file.**
-**At session end → `bash ~/.copilot/hooks/copilot/session-end.sh`**
+**Rules (in order):**
+1. If gitflow-check fails or says "no git repo" → fix branch/init git BEFORE any file edit.
+2. If `openspec/` exists and no active SDD change → run `sdd new "<feature>"` BEFORE implementing.
+3. If there IS an active SDD change → resume it (`sdd status`) before coding.
+4. At session end → `bash ~/.copilot/hooks/copilot/session-end.sh`
+
+**Never implement a feature without an active SDD change unless the user explicitly skips SDD.**
 
 ---
 
