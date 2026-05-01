@@ -1,5 +1,17 @@
 # DevMind — Copilot Instructions
 
+## ⚡ MANDATORY WORKFLOW — Run at every session start
+
+```bash
+bash ~/.copilot/hooks/copilot/session-start.sh   # engram context
+bash ~/.copilot/hooks/copilot/gitflow-check.sh   # verify branch
+```
+
+**If gitflow-check fails or says "no git repo" → fix branch/init git BEFORE touching any file.**
+**At session end → `bash ~/.copilot/hooks/copilot/session-end.sh`**
+
+---
+
 ## Architecture
 
 pnpm monorepo with three packages that run as separate processes:
