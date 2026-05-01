@@ -25,7 +25,6 @@ interface ChunkRow {
 export class VectorIndexStore {
   private db: Database.Database;
   private hnsw: HierarchicalNSW;
-  private deletedCount = 0;
   private initialized = false;
 
   constructor(
@@ -105,7 +104,6 @@ export class VectorIndexStore {
     for (const row of rows) {
       try {
         this.hnsw.markDelete(row.hnsw_label);
-        this.deletedCount++;
       } catch (err) {
         logger.warn({ err, hnswLabel: row.hnsw_label }, 'markDelete failed');
       }
@@ -171,13 +169,17 @@ export class VectorIndexStore {
 
   saveIndex(): void {
     this.hnsw.writeIndexSync(this.hnswPath);
-    this.deletedCount = 0;
     logger.info({ hnswPath: this.hnswPath }, 'HNSW index saved');
   }
 
   shouldRebuild(): boolean {
-    const total = this.hnsw.getCurrentCount();
-    return total > 0 && this.deletedCount / total > DELETE_REBUILD_THRESHOLD;
+    const hnswTotal = this.hnsw.getCurrentCount();
+    if (hnswTotal === 0) return false;
+    const { count: activeCount } = this.db
+      .prepare('SELECT COUNT(*) as count FROM chunks')
+      .get() as { count: number };
+    const softDeleted = hnswTotal - activeCount;
+    return softDeleted / hnswTotal > DELETE_REBUILD_THRESHOLD;
   }
 
   rebuildIndex(
@@ -189,7 +191,6 @@ export class VectorIndexStore {
     this.db.prepare('DELETE FROM chunks').run();
     this.hnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
     this.hnsw.initIndex(Math.max(HNSW_MAX_ELEMENTS, allChunks.length + 1000));
-    this.deletedCount = 0;
 
     // Re-add all chunks grouped by file
     const byFile = new Map<string, { chunks: Chunk[]; embeddings: number[][] }>();
