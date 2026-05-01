@@ -26,6 +26,8 @@ export class VectorIndexStore {
   private db: Database.Database;
   private hnsw: HierarchicalNSW;
   private initialized = false;
+  private countChunksStmt!: Database.Statement;
+  private _forceRebuild = false;
 
   constructor(
     private readonly dbPath: string,
@@ -61,6 +63,7 @@ export class VectorIndexStore {
         logger.info({ hnswPath: this.hnswPath }, 'HNSW index loaded');
       } catch (err) {
         logger.warn({ err }, 'HNSW index corrupt — rebuilding from scratch');
+        this.db.close();
         this._deleteStoreFiles();
         this.db = new Database(this.dbPath);
         this.db.pragma('journal_mode = WAL');
@@ -86,12 +89,13 @@ export class VectorIndexStore {
       this.hnsw.initIndex(HNSW_MAX_ELEMENTS);
     }
 
+    this.countChunksStmt = this.db.prepare('SELECT COUNT(*) as count FROM chunks');
     this.initialized = true;
   }
 
   getFileHashes(): Map<string, string> {
     const rows = this.db
-      .prepare('SELECT DISTINCT file_path, file_hash FROM chunks')
+      .prepare('SELECT file_path, MAX(file_hash) as file_hash FROM chunks GROUP BY file_path ORDER BY MAX(indexed_at) DESC')
       .all() as Array<{ file_path: string; file_hash: string }>;
     return new Map(rows.map((r) => [r.file_path, r.file_hash]));
   }
@@ -101,14 +105,36 @@ export class VectorIndexStore {
       .prepare('SELECT hnsw_label FROM chunks WHERE file_path = ?')
       .all(filePath) as Array<{ hnsw_label: number }>;
 
+    const successfulLabels: number[] = [];
     for (const row of rows) {
       try {
         this.hnsw.markDelete(row.hnsw_label);
+        successfulLabels.push(row.hnsw_label);
       } catch (err) {
-        logger.warn({ err, hnswLabel: row.hnsw_label }, 'markDelete failed');
+        logger.warn({ err, hnswLabel: row.hnsw_label }, 'markDelete failed — skipping DB delete for this label');
       }
     }
-    this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
+
+    if (successfulLabels.length === 0) return;
+
+    const SQLITE_MAX_VARS = 999;
+    try {
+      if (successfulLabels.length === rows.length) {
+        this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
+      } else {
+        for (let i = 0; i < successfulLabels.length; i += SQLITE_MAX_VARS) {
+          const batch = successfulLabels.slice(i, i + SQLITE_MAX_VARS);
+          const placeholders = batch.map(() => '?').join(',');
+          this.db.prepare(`DELETE FROM chunks WHERE hnsw_label IN (${placeholders})`).run(...batch);
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        { err, filePath, orphanedLabels: successfulLabels.length },
+        'deleteChunksByFile: DB delete failed after HNSW markDelete — scheduling forced rebuild'
+      );
+      this._forceRebuild = true;
+    }
   }
 
   addChunks(chunks: Chunk[], embeddings: number[][], fileHash: string): void {
@@ -118,6 +144,8 @@ export class VectorIndexStore {
       VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel)
     `);
 
+    const pendingPoints: Array<{ label: number; embedding: number[] }> = [];
+
     const addAll = this.db.transaction(() => {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
@@ -125,11 +153,6 @@ export class VectorIndexStore {
         if (!chunk || !embedding) continue;
 
         const hnswLabel = nextLabel + i;
-        // Grow index if needed
-        if (hnswLabel >= this.hnsw.getMaxElements()) {
-          this.hnsw.resizeIndex(this.hnsw.getMaxElements() + 10_000);
-        }
-        this.hnsw.addPoint(embedding, hnswLabel);
         insert.run({
           filePath: chunk.filePath,
           fileHash,
@@ -139,10 +162,24 @@ export class VectorIndexStore {
           text: chunk.text,
           hnswLabel,
         });
+        pendingPoints.push({ label: hnswLabel, embedding });
       }
     });
 
     addAll();
+
+    // Add to HNSW only after the DB transaction commits successfully.
+    // If addPoint fails here, HNSW/DB diverge but this is recoverable on next rebuild.
+    for (const { label, embedding } of pendingPoints) {
+      if (label >= this.hnsw.getMaxElements()) {
+        this.hnsw.resizeIndex(this.hnsw.getMaxElements() + 10_000);
+      }
+      try {
+        this.hnsw.addPoint(embedding, label);
+      } catch (err) {
+        logger.warn({ err, hnswLabel: label }, 'hnsw.addPoint failed after DB commit — HNSW/DB may diverge, will recover on next rebuild');
+      }
+    }
   }
 
   getAllFilePaths(): Set<string> {
@@ -161,9 +198,18 @@ export class VectorIndexStore {
 
     const actualK = Math.min(k, total);
     const result = this.hnsw.searchKnn(queryEmbedding, actualK);
-    return result.neighbors.map((label, i) => ({
-      hnswLabel: label,
-      score: 1 - (result.distances[i] ?? 0),
+
+    if (result.distances.length !== result.neighbors.length) {
+      logger.warn(
+        { neighbors: result.neighbors.length, distances: result.distances.length },
+        'searchKnn: hnswlib returned mismatched neighbors/distances arrays — truncating to shorter length'
+      );
+    }
+
+    const len = Math.min(result.neighbors.length, result.distances.length);
+    return Array.from({ length: len }, (_, i) => ({
+      hnswLabel: result.neighbors[i] as number,
+      score: 1 - (result.distances[i] as number),
     }));
   }
 
@@ -173,12 +219,26 @@ export class VectorIndexStore {
   }
 
   shouldRebuild(): boolean {
+    if (this._forceRebuild) {
+      logger.warn('Forced rebuild due to previous deleteChunksByFile DB failure');
+      // NOTE: _forceRebuild is cleared in rebuildIndex() after success, not here.
+      // If shouldRebuild() returns true but rebuildIndex() throws, the flag survives.
+      return true;
+    }
     const hnswTotal = this.hnsw.getCurrentCount();
-    if (hnswTotal === 0) return false;
-    const { count: activeCount } = this.db
-      .prepare('SELECT COUNT(*) as count FROM chunks')
-      .get() as { count: number };
+    const { count: activeCount } = this.countChunksStmt.get() as { count: number };
+    if (hnswTotal === 0) {
+      if (activeCount > 0) {
+        logger.warn({ activeCount }, 'HNSW is empty but DB has active chunks — forcing rebuild');
+        return true;
+      }
+      return false;
+    }
     const softDeleted = hnswTotal - activeCount;
+    if (softDeleted < 0) {
+      logger.warn({ hnswTotal, activeCount }, 'HNSW/DB divergence detected: activeCount > hnswTotal — forcing rebuild');
+      return true;
+    }
     return softDeleted / hnswTotal > DELETE_REBUILD_THRESHOLD;
   }
 
@@ -188,11 +248,9 @@ export class VectorIndexStore {
     fileHashes: Map<string, string>
   ): void {
     logger.info('Rebuilding HNSW index from scratch');
-    this.db.prepare('DELETE FROM chunks').run();
-    this.hnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
-    this.hnsw.initIndex(Math.max(HNSW_MAX_ELEMENTS, allChunks.length + 1000));
+    const newHnsw = new HierarchicalNSW(HNSW_SPACE, HNSW_DIMENSIONS);
+    newHnsw.initIndex(Math.max(HNSW_MAX_ELEMENTS, allChunks.length + 1000));
 
-    // Re-add all chunks grouped by file
     const byFile = new Map<string, { chunks: Chunk[]; embeddings: number[][] }>();
     for (let i = 0; i < allChunks.length; i++) {
       const chunk = allChunks[i];
@@ -204,18 +262,73 @@ export class VectorIndexStore {
       byFile.set(chunk.filePath, entry);
     }
 
-    for (const [filePath, { chunks, embeddings }] of byFile) {
-      const hash = fileHashes.get(filePath) ?? '';
-      this.addChunks(chunks, embeddings, hash);
+    const insert = this.db.prepare(`
+      INSERT INTO chunks (file_path, file_hash, chunk_hash, start_offset, end_offset, text, hnsw_label)
+      VALUES (@filePath, @fileHash, @chunkHash, @startOffset, @endOffset, @text, @hnswLabel)
+    `);
+    const pendingPoints: Array<{ label: number; embedding: number[] }> = [];
+
+    const rebuildTx = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM chunks').run();
+      let labelCounter = 0;
+      for (const [filePath, { chunks, embeddings }] of byFile) {
+        const hash = fileHashes.get(filePath);
+        if (!hash) {
+          logger.warn({ filePath }, 'rebuildIndex: missing file hash — skipping file');
+          continue;
+        }
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          const embedding = embeddings[i];
+          if (!chunk || !embedding) continue;
+          const hnswLabel = labelCounter++;
+          insert.run({
+            filePath: chunk.filePath,
+            fileHash: hash,
+            chunkHash: chunk.hash,
+            startOffset: chunk.startOffset,
+            endOffset: chunk.endOffset,
+            text: chunk.text,
+            hnswLabel,
+          });
+          pendingPoints.push({ label: hnswLabel, embedding });
+        }
+      }
+    });
+
+    rebuildTx(); // If this throws, newHnsw is discarded — this.hnsw remains valid
+
+    for (const { label, embedding } of pendingPoints) {
+      if (label >= newHnsw.getMaxElements()) {
+        newHnsw.resizeIndex(newHnsw.getMaxElements() + 10_000);
+      }
+      try {
+        newHnsw.addPoint(embedding, label);
+      } catch (err) {
+        logger.warn({ err, hnswLabel: label }, 'hnsw.addPoint failed during rebuild — will recover on next shouldRebuild check');
+      }
     }
+
+    this.hnsw = newHnsw;
+    this._forceRebuild = false;
   }
 
   getChunksByLabels(labels: number[]): ChunkRow[] {
     if (labels.length === 0) return [];
-    const placeholders = labels.map(() => '?').join(',');
-    return this.db
-      .prepare(`SELECT * FROM chunks WHERE hnsw_label IN (${placeholders})`)
-      .all(...labels) as ChunkRow[];
+    const SQLITE_MAX_VARS = 999;
+    const rowMap = new Map<number, ChunkRow>();
+    for (let i = 0; i < labels.length; i += SQLITE_MAX_VARS) {
+      const batch = labels.slice(i, i + SQLITE_MAX_VARS);
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT * FROM chunks WHERE hnsw_label IN (${placeholders})`)
+        .all(...batch) as ChunkRow[];
+      for (const row of rows) rowMap.set(row.hnsw_label, row);
+    }
+    return labels.flatMap((label) => {
+      const row = rowMap.get(label);
+      return row ? [row] : [];
+    });
   }
 
   private _nextHnswLabel(): number {
@@ -228,9 +341,12 @@ export class VectorIndexStore {
   private _deleteStoreFiles(): void {
     try {
       if (existsSync(this.dbPath)) unlinkSync(this.dbPath);
+      if (existsSync(this.dbPath + '-wal')) unlinkSync(this.dbPath + '-wal');
+      if (existsSync(this.dbPath + '-shm')) unlinkSync(this.dbPath + '-shm');
       if (existsSync(this.hnswPath)) unlinkSync(this.hnswPath);
     } catch (err) {
-      logger.warn({ err }, 'Failed to delete corrupt store files');
+      logger.error({ err }, 'Failed to delete corrupt store files — cannot recover');
+      throw err;
     }
   }
 }
