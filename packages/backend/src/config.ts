@@ -55,10 +55,10 @@ const ConfigSchema = z.object({
   // Signed URLs
   SIGNED_URL_TTL_MS: z.coerce.number().default(3_600_000), // 1 hour
 
-  // WebAuthn
+  // WebAuthn (kept for config compatibility but no longer used in auth flow)
   WEBAUTHN_RP_ID: z.string().default('devmind.casa'),
   WEBAUTHN_RP_NAME: z.string().default('DevMind'),
-  WEBAUTHN_DISABLED: z.coerce.boolean().default(false),
+  WEBAUTHN_DISABLED: z.coerce.boolean().default(true),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
