@@ -1,11 +1,5 @@
-import { apiFetch } from '../../lib/api.js';
 import { useState } from 'react';
-
-interface Session {
-  id: string;
-  title: string;
-  created_at: string;
-}
+import type { Session } from '../../types/index.js';
 
 interface SessionSidebarProps {
   sessions: Session[];
@@ -126,4 +120,3 @@ export function SessionSidebar({ sessions, currentId, onSelect, onCreate, onDele
   );
 }
 
-export type { Session };
