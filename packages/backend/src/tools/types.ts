@@ -4,6 +4,7 @@ export interface ToolContext {
   userId: string;
   sessionId: string;
   workspaceRoot: string;
+  projectId?: string;
   signal?: AbortSignal;
 }
 

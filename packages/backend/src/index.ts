@@ -19,6 +19,13 @@ import { SubscriptionsRepo } from './db/repos/subscriptions.js';
 import { ChallengesRepo } from './db/repos/challenges.js';
 import { AgentRunsRepo } from './db/repos/agent-runs.js';
 import { SettingsRepo } from './db/repos/settings.js';
+import { ProjectsRepo } from './db/repos/projects.js';
+import { ScreensRepo } from './db/repos/screens.js';
+import { PreviewsRepo } from './db/repos/previews.js';
+import { ProjectRunsRepo } from './db/repos/project-runs.js';
+import { AppResourcesRepo } from './db/repos/app-resources.js';
+import { ProjectFilesRepo } from './db/repos/project-files.js';
+import { ComponentsRepo } from './db/repos/components.js';
 
 // Services
 import { StorageService } from './storage/storage.js';
@@ -36,6 +43,7 @@ import { createSessionsRouter } from './sessions/routes.js';
 import { createAdminRouter } from './admin/routes.js';
 import { createChatRouter } from './chat/routes.js';
 import { createWorkspaceRouter } from './workspace/routes.js';
+import { createBuilderRouter } from './builder/routes.js';
 
 // Instantiate DB and all repos/services
 const db = getDb();
@@ -51,6 +59,13 @@ const subscriptions = new SubscriptionsRepo(db);
 const challenges = new ChallengesRepo(db);
 const agentRuns = new AgentRunsRepo(db);
 const settingsRepo = new SettingsRepo(db);
+const projects = new ProjectsRepo(db);
+const screens = new ScreensRepo(db);
+const previews = new PreviewsRepo(db);
+const projectRuns = new ProjectRunsRepo(db);
+const appResources = new AppResourcesRepo(db);
+const projectFiles = new ProjectFilesRepo(db);
+const components = new ComponentsRepo(db);
 
 // Seed Ollama defaults from env/config (only on first run — INSERT OR IGNORE)
 settingsRepo.seed('ollama.base_url', config.OLLAMA_BASE_URL, 'Ollama server base URL');
@@ -64,7 +79,7 @@ const flagsService = new FlagsService(flags);
 const wsManager = new WsManager();
 const push = new PushService(subscriptions);
 wsManager.setPushService(push);
-const _queue = new JobQueueClient(jobs);
+const queue = new JobQueueClient(jobs);
 
 // Suppress unused warnings for repos used only indirectly
 void artifacts;
@@ -84,8 +99,9 @@ app.route('/api/artifacts', createStorageRouter(storage));
 app.route('/', createFlagsRouter(flagsService));
 app.route('/admin', createAdminRouter(users, jobs, settingsRepo));
 app.route('/api/sessions', createSessionsRouter(sessions, messages));
-app.route('/api/chat', createChatRouter({ sessions, messages, tasks, agentRuns, storage }));
+app.route('/api/chat', createChatRouter({ sessions, messages, tasks, agentRuns, storage, projects, screens, projectFiles }));
 app.route('/api/workspace', createWorkspaceRouter());
+app.route('/api', createBuilderRouter(projects, screens, sessions, previews, appResources, projectFiles, projectRuns, components, queue));
 app.route('/', createRealtimeRouter(wsManager, push));
 
 const server = serve(
@@ -141,4 +157,3 @@ function shutdown(): void {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-

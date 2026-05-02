@@ -14,8 +14,8 @@ export function createSessionsRouter(sessions: SessionsRepo, messages: MessagesR
 
   router.post('/', authMiddleware, async (c) => {
     const userId = c.get('userId');
-    const body = await c.req.json<{ title?: string }>().catch(() => ({}));
-    const session = sessions.create(userId, (body as { title?: string }).title);
+    const body = await c.req.json<{ title?: string; projectId?: string }>().catch(() => ({}));
+    const session = sessions.create(userId, body.title, body.projectId);
     return c.json(session, 201);
   });
 

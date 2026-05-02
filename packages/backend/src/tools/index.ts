@@ -9,20 +9,23 @@ import {
   createTaskUpdateTool,
   createArtifactListTool,
 } from './impl/session-tools.js';
+import { createProjectFileTools } from './impl/project-file-tools.js';
 import type { SessionsRepo } from '../db/repos/sessions.js';
 import type { MessagesRepo } from '../db/repos/messages.js';
 import type { TasksRepo } from '../db/repos/tasks.js';
 import type { StorageService } from '../storage/storage.js';
+import type { ProjectFilesRepo } from '../db/repos/project-files.js';
 
 export interface ToolServices {
   sessions: SessionsRepo;
   messages: MessagesRepo;
   tasks: TasksRepo;
   storage: StorageService;
+  projectFiles?: ProjectFilesRepo;
 }
 
 export function createToolRegistry(services: ToolServices, userId: string): ToolRegistry {
-  return new ToolRegistry().register(
+  const registry = new ToolRegistry().register(
     fileReadTool,
     fileListTool,
     searchCodeTool,
@@ -32,6 +35,12 @@ export function createToolRegistry(services: ToolServices, userId: string): Tool
     createTaskUpdateTool(services.tasks),
     createArtifactListTool(services.storage, userId)
   );
+
+  if (services.projectFiles) {
+    registry.register(...createProjectFileTools(services.projectFiles));
+  }
+
+  return registry;
 }
 
 export { ToolRegistry } from './registry.js';
