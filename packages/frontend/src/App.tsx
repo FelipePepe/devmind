@@ -337,6 +337,8 @@ function TopBar({ user, logout }: { user: User | null; logout: () => Promise<voi
           <Link to="/" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Chat</Link>
           {user.is_admin === 1 && (
             <>
+              <span style={{ color: 'var(--border-default)', userSelect: 'none' }}>|</span>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admin</span>
               <Link to="/admin/flags" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Flags</Link>
               <Link to="/admin/users" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Users</Link>
               <Link to="/admin/jobs" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Jobs</Link>
@@ -395,10 +397,10 @@ export default function App() {
                 <TopBar user={user} logout={logout} />
                 <Routes>
                   <Route path="/" element={<Chat />} />
-                  <Route path="/admin/flags" element={<AdminRoute user={user}><FlagsAdmin /></AdminRoute>} />
-                  <Route path="/admin/users" element={<AdminRoute user={user}><UsersAdmin /></AdminRoute>} />
-                  <Route path="/admin/jobs" element={<AdminRoute user={user}><JobsAdmin /></AdminRoute>} />
-                  <Route path="/admin/ollama" element={<AdminRoute user={user}><OllamaSettings /></AdminRoute>} />
+                  <Route path="/admin/flags" element={<AdminRoute user={user}><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><FlagsAdmin /></div></AdminRoute>} />
+                  <Route path="/admin/users" element={<AdminRoute user={user}><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><UsersAdmin /></div></AdminRoute>} />
+                  <Route path="/admin/jobs" element={<AdminRoute user={user}><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><JobsAdmin /></div></AdminRoute>} />
+                  <Route path="/admin/ollama" element={<AdminRoute user={user}><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><OllamaSettings /></div></AdminRoute>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>

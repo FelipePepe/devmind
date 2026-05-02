@@ -35,6 +35,7 @@ import { createRealtimeRouter } from './realtime/routes.js';
 import { createSessionsRouter } from './sessions/routes.js';
 import { createAdminRouter } from './admin/routes.js';
 import { createChatRouter } from './chat/routes.js';
+import { createWorkspaceRouter } from './workspace/routes.js';
 
 // Instantiate DB and all repos/services
 const db = getDb();
@@ -84,6 +85,7 @@ app.route('/', createFlagsRouter(flagsService));
 app.route('/admin', createAdminRouter(users, jobs, settingsRepo));
 app.route('/api/sessions', createSessionsRouter(sessions, messages));
 app.route('/api/chat', createChatRouter({ sessions, messages, tasks, agentRuns, storage }));
+app.route('/api/workspace', createWorkspaceRouter());
 app.route('/', createRealtimeRouter(wsManager, push));
 
 const server = serve(

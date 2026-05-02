@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { SessionSidebar } from '../components/session/SessionSidebar.js';
+import { ArtifactViewer } from '../components/artifacts/ArtifactViewer.js';
 import { useSession } from '../hooks/useSession.js';
 import { useChatStore } from '../hooks/useChatStore.js';
 import { apiFetch } from '../lib/api.js';
+import { parseArtifacts } from '../lib/artifacts.js';
 
 interface Session {
   id: string;
@@ -49,6 +51,11 @@ export default function Chat() {
     void send(currentSessionId, msg);
   }, [input, currentSessionId, isStreaming, send]);
 
+  const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
+  const artifacts = lastAssistantMsg ? parseArtifacts(lastAssistantMsg.content) : [];
+  const liveArtifacts = isStreaming ? parseArtifacts(streamingContent) : [];
+  const displayArtifacts = liveArtifacts.length > 0 ? liveArtifacts : artifacts;
+
   return (
     <>
       <SessionSidebar
@@ -58,19 +65,11 @@ export default function Chat() {
         onCreate={() => void createSession()}
       />
 
-      <main className="main-area">
-        <div
-          style={{
-            color: 'var(--text-tertiary)',
-            fontSize: 'var(--text-sm)',
-            textAlign: 'center',
-            padding: 'var(--space-8)',
-          }}
-        >
-          {currentSessionId
-            ? 'Editor & Terminal coming in Fase 5'
-            : 'Select or create a session to start'}
-        </div>
+      <main className="main-area" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <ArtifactViewer
+          artifacts={displayArtifacts}
+          isStreaming={isStreaming && liveArtifacts.length > 0}
+        />
       </main>
 
       <ChatPanel

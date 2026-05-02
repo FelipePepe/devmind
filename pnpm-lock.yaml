@@ -86,6 +86,9 @@ importers:
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
       marked:
         specifier: ^18.0.3
         version: 18.0.3
@@ -1078,6 +1081,10 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  highlight.js@11.11.1:
+    resolution: {integrity: sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w==}
+    engines: {node: '>=12.0.0'}
 
   hnswlib-node@3.0.0:
     resolution: {integrity: sha512-fypn21qvVORassppC8/qNfZ5KAOspZpm/IbUkAtlqvbtDNnF5VVk5RWF7O5V6qwr7z+T3s1ePej6wQt5wRQ4Cg==}
@@ -2459,6 +2466,8 @@ snapshots:
   github-from-package@0.0.0: {}
 
   has-flag@4.0.0: {}
+
+  highlight.js@11.11.1: {}
 
   hnswlib-node@3.0.0:
     dependencies:

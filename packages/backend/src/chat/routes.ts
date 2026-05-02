@@ -14,11 +14,27 @@ import type { StorageService } from '../storage/storage.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
 
-const SYSTEM_PROMPT =
-  'You are DevMind, a local AI coding assistant. ' +
-  'You help the user write, review, and understand code. ' +
-  'Use your tools to read files, search the codebase, and run commands when needed. ' +
-  'Be concise and precise. Prefer code over prose when answering coding questions.';
+function buildSystemPrompt(workspaceRoot: string): string {
+  const date = new Date().toISOString().split('T')[0] ?? new Date().toISOString();
+  return `You are DevMind, a local AI coding assistant embedded in a developer workspace.
+
+Workspace: ${workspaceRoot}
+Date: ${date}
+
+Your capabilities:
+- file_read: Read files from the workspace
+- file_list: List files and directories  
+- search_code: Search code with regex/pattern
+- run_command: Execute shell commands in the workspace
+- vector_search: Semantic search over indexed code
+
+Guidelines:
+- When asked to write code, produce complete, working files
+- Wrap code in markdown code blocks with the language: \`\`\`typescript\\n...\`\`\`
+- For file paths, add a comment on the first line: // path/to/file.ts
+- Use your tools to read existing code before modifying it
+- Be concise. Prefer code over prose.`;
+}
 
 const HISTORY_LIMIT = 40;
 
@@ -58,7 +74,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
     // Build message history for Ollama
     const history = deps.messages.findBySession(sessionId, HISTORY_LIMIT);
     const ollamaMessages: OllamaMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: buildSystemPrompt(config.WORKSPACE_ROOT) },
       ...history.map((m) => ({
         role: m.role as OllamaMessage['role'],
         content: m.content,

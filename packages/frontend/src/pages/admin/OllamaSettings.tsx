@@ -70,7 +70,7 @@ export default function OllamaSettings() {
   };
 
   return (
-    <div style={{ padding: 'var(--space-6)', maxWidth: 640 }}>
+    <div style={{ padding: 'var(--space-6)', maxWidth: 900, width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-5)' }}>
         <h2 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 600 }}>Ollama Settings</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
