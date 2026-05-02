@@ -7,24 +7,45 @@ Suite de programación local con IA para la intranet `.casa`. Asistente de códi
 | Capa | Tecnología |
 |---|---|
 | Backend | Hono + SQLite (better-sqlite3) |
-| Frontend | React + Vite |
+| Frontend | React + Vite + Zustand |
 | Workers | Background job queue (SQLite) |
 | IA | Ollama local (Qwen, nomic-embed-text) |
-| Auth | WebAuthn (passkeys) + JWT |
+| Auth | Password + MFA (TOTP) + JWT |
 | Búsqueda semántica | HNSW (hnswlib-node) + embeddings |
 | Secrets | Infisical (self-hosted) |
 | Runtime | Node.js 22, TypeScript strict, pnpm workspaces |
+
+## Dirección del producto — Project-First Builder
+
+DevMind migró de una arquitectura centrada en chat a una arquitectura centrada en proyectos. El objeto raíz del sistema es el **proyecto**, no la sesión de chat.
+
+```
+proyecto
+  → pantallas (screens)
+  → recursos del app (colecciones, storage, canales, jobs)
+  → preview (estado del runtime de preview)
+  → sesiones de agente (chat project-scoped)
+  → artefactos generados
+```
+
+El chat actúa como interfaz de refinamiento del proyecto, no como contenedor del estado del producto. Los proyectos existen independientemente del historial de chat.
 
 ## Arquitectura
 
 ```
 packages/
   backend/   — API REST + WebSocket (Hono, puerto 3001)
+               builder/: CRUD de proyectos, screens, previews, app-resources
+               chat/:   agente project-scoped con SSE streaming
+               workers/: cola de generación y preview
   frontend/  — SPA React/Vite (puerto 5173)
-  workers/   — Sidecar de jobs: indexación, archivado (polling cada 5 s)
+               /projects: entrada principal del producto
+               /builder/:id: shell del builder (sidebar, preview, agente)
+               /chat: legacy session chat (en migración)
+  workers/   — Sidecar de jobs: generación, preview, indexación, archivado (polling cada 5 s)
 ```
 
-El backend expone todos los endpoints REST y el path `/ws`. Los workers comparten la misma base SQLite y procesan jobs en segundo plano. El frontend se comunica con el backend vía `apiFetch` y `wsClient`.
+El backend expone todos los endpoints REST y el path `/ws`. Los workers comparten la misma base SQLite y procesan jobs en segundo plano. El frontend usa Zustand para el estado global (auth, sesión, chat).
 
 ## Requisitos
 
@@ -95,19 +116,20 @@ ollama pull nomic-embed-text      # embeddings (vector search)
 
 Ver [`DESIGN.md`](./DESIGN.md) — fuente de verdad del sistema de tokens visuales (colores, tipografía, espaciado). Accent color: coral `#D97757`. Tema: warm dark IDE-first.
 
-## Roadmap
+## Estado actual del producto
 
-Estado de implementación siguiendo el [`RECOVERY_PLAN.md`](./RECOVERY_PLAN.md):
-
-| Fase | Descripción | Estado |
+| Área | Estado | Notas |
 |---|---|---|
-| 1 | Base estable + build | ✅ |
-| 2 | Chat SSE streaming | ✅ |
-| 3 | Runtime de agente + tools | ✅ |
-| 4 | Frontend layout 3 paneles | 🔲 |
-| 5 | Persistencia y artefactos | 🔲 |
-| 6 | Indexación semántica (HNSW) | ✅ |
-| 7 | Workers reales | 🔲 |
-| 8 | Seguridad y gobierno de tools | 🔲 |
-| 9 | Firebase como v2 | 🔲 |
-| 10 | Tests, CI, release | 🔲 |
+| Auth (password + TOTP + JWT) | ✅ | Login, registro, MFA, refresh |
+| Chat SSE streaming | ✅ | Agente con tools, streaming de tokens |
+| Runtime de agente + tools | ✅ | Ollama, loop de tools, persistencia |
+| Frontend Zustand stores | ✅ | auth, chat, session stores |
+| **Builder — proyectos y screens** | ✅ | CRUD completo, frontend `/projects` + `/builder/:id` |
+| **Builder — preview runtime** | ✅ (skeleton) | Estado de preview real; workers pendientes de runtime real |
+| **Builder — app resources** | ✅ | Collections, storage, channels, jobs, auth config por proyecto |
+| Indexación semántica (HNSW) | ✅ | Embeddings Ollama, búsqueda vectorial |
+| Workers — jobs reales de generación | 🔲 | Skeletons listos; implementación real pendiente |
+| Seguridad y gobierno de tools | 🔲 | |
+| Tests, CI, release | 🔲 | |
+
+Ver [`RECOVERY_PLAN.md`](./RECOVERY_PLAN.md) para el contexto histórico de la migración.

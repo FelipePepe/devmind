@@ -1,5 +1,14 @@
 # DevMind Recovery Plan
 
+> **DOCUMENTO HISTÓRICO** — Este plan describe la situación del repo a principios de 2025 y las decisiones de arquitectura tomadas en ese momento. La mayoría de las fases descritas aquí ya están implementadas. Para el estado actual del producto ver `README.md`.
+>
+> Supuestos de este documento que ya no aplican:
+> - Auth objetivo: ~~WebAuthn (passkeys)~~ → reemplazado por Password + MFA (TOTP)
+> - Arquitectura centrada en chat → migrada a **project-first builder** (ver `openspec/changes/002-project-first-builder/`)
+> - Firebase como v2 → descartado en favor de infraestructura local-first extendida
+
+---
+
 ## Objetivo
 
 Corregir el desvío entre:

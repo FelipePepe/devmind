@@ -7,11 +7,12 @@ context: |
   Architecture: Backend (packages/backend), Frontend (packages/frontend), Workers sidecar (packages/workers)
   LLM: Ollama local (qwen2.5-coder, qwen3, nomic-embed-text) via LangGraph
   Persistence: SQLite (better-sqlite3) + hnswlib-node vector store
-  Auth: Passkeys / WebAuthn (no passwords), JWT sessions
-  Realtime: WebSockets bidirectional + Web Push notifications
+  Auth: Username/password + TOTP MFA, JWT sessions
+  Realtime: SSE for chat streaming, WebSockets for notifications, Web Push fallback
   Storage: Local filesystem (NAS/maya)
   Jobs: SQLite-backed queue (separate sidecar process)
-  Features: Feature flags via SQLite table, multi-user
+  Product direction: Project-first app builder inspired by Google Stitch, Claude Design, and Firebase
+  Features: Feature flags via SQLite table, multi-user, local coding agent, semantic code search
   Network: .casa intranet only, secrets via Infisical (devmind-pxgt)
 
 strict_tdd: false
@@ -59,7 +60,7 @@ rules:
   design:
     - Include sequence diagrams for complex flows (WebSocket, LangGraph agent flows)
     - Document architecture decisions with rationale
-    - Consider WebAuthn / Passkeys auth flow implications
+    - Consider auth flow implications and migration impact on current TOTP/JWT stack
   tasks:
     - Group tasks by phase (infrastructure, implementation, testing)
     - Use hierarchical numbering (1.1, 1.2, etc.)
