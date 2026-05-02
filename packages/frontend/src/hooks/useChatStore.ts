@@ -2,6 +2,16 @@ import { useState, useCallback, useRef } from 'react';
 import { getAccessToken } from '../lib/api.js';
 import { readSSE } from '../lib/sse.js';
 
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export interface ChatMessage {
   id: string;
   session_id: string;
@@ -83,7 +93,7 @@ export function useChatStore(onDone: () => void): UseChatStoreReturn {
             setStreamingContent((prev) => prev + chunk);
           } else if (event === 'tool_call') {
             const { name, args } = JSON.parse(data) as { name: string; args: string };
-            const id = crypto.randomUUID();
+            const id = generateId();
             activeToolCallId = id;
             setToolEvents((prev) => [...prev, { id, name, args }]);
           } else if (event === 'tool_result') {
