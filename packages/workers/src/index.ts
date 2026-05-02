@@ -3,6 +3,8 @@ import { getDb } from './db.js';
 import { JobQueueClient } from './jobs.js';
 import { indexCodebase, type IndexCodebasePayload } from './handlers/index-codebase.js';
 import { archiveSessions } from './handlers/archive-sessions.js';
+import { generateProject, type GenerateProjectPayload } from './handlers/generate-project.js';
+import { rebuildPreview, type RebuildPreviewPayload } from './handlers/rebuild-preview.js';
 import type { Job } from './jobs.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -28,6 +30,12 @@ async function dispatch(job: Job): Promise<void> {
         break;
       case 'archiveSessions':
         await archiveSessions(jobs, job.id);
+        break;
+      case 'generateProject':
+        await generateProject(JSON.parse(job.payload) as GenerateProjectPayload, jobs, job.id);
+        break;
+      case 'rebuildPreview':
+        await rebuildPreview(JSON.parse(job.payload) as RebuildPreviewPayload, jobs, job.id);
         break;
       default:
         logger.warn({ type: job.type }, 'Unknown job type');
