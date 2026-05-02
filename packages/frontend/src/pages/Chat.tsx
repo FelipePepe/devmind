@@ -44,6 +44,18 @@ export default function Chat() {
     setCurrentSessionId(session.id);
   }, []);
 
+  const deleteSession = useCallback(async (id: string) => {
+    await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' }).catch(() => null);
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    if (currentSessionId === id) {
+      setSessions((prev) => {
+        const remaining = prev.filter((s) => s.id !== id);
+        setCurrentSessionId(remaining[0]?.id ?? null);
+        return remaining;
+      });
+    }
+  }, [currentSessionId]);
+
   const handleSubmit = useCallback(() => {
     if (!input.trim() || !currentSessionId || isStreaming) return;
     const msg = input;
@@ -63,6 +75,7 @@ export default function Chat() {
         currentId={currentSessionId}
         onSelect={setCurrentSessionId}
         onCreate={() => void createSession()}
+        onDelete={(id) => void deleteSession(id)}
       />
 
       <main className="main-area" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

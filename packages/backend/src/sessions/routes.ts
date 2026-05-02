@@ -29,6 +29,16 @@ export function createSessionsRouter(sessions: SessionsRepo, messages: MessagesR
     return c.json(msgs);
   });
 
+  router.delete('/:id', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const sessionId = c.req.param('id');
+    if (!sessionId) return c.json({ error: 'Missing id' }, 400);
+    const session = sessions.findById(userId, sessionId);
+    if (!session) return c.json({ error: 'Session not found' }, 404);
+    sessions.archive(userId, sessionId);
+    return c.body(null, 204);
+  });
+
   router.post('/:id/messages', authMiddleware, async (c) => {
     const userId = c.get('userId');
     const sessionId = c.req.param('id');
