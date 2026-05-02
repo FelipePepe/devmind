@@ -54,3 +54,20 @@
 - [x] R.2 [backend] Expose minimal project CRUD routes
 - [x] R.3 [frontend] Replace home entry with project list
 - [x] R.4 [frontend] Add builder page shell with placeholder preview pane
+
+## Archive
+
+- **Status**: ARCHIVED
+- **Archived at**: 2026-05-02
+- **Verify result**: PASS (tras fixes)
+- **Fixes aplicados post-verify**:
+  - fix: validation bug en PUT /files endpoint (`!body?.content === undefined` → `typeof body?.content !== 'string'`)
+  - feat: enqueue wiring para `rebuildPreview` y `generateProject` en builder/routes.ts
+  - feat: nuevo endpoint `POST /api/projects/:id/generate`
+  - fix: preview status transitions (ready/failed) en worker handlers
+  - feat: tabla `components`, `ComponentsRepo`, CRUD routes y migration 011
+  - fix: `ProjectRunsRepo` ya no es dead code — pasado a createBuilderRouter
+  - fix: `Session` type en frontend/types/index.ts — `project_id` y `archived_at` añadidos
+  - refactor: `PreviewPane` y `PromptPanel` extraídos a `components/builder/`, `Builder.tsx` 590→491 líneas
+- **Branch**: feature/password-mfa-auth
+- **Last commit**: d76b627 (chore: update engram memory store)
