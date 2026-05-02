@@ -5,7 +5,9 @@ import Chat from './pages/Chat.js';
 import FlagsAdmin from './pages/admin/Flags.js';
 import UsersAdmin from './pages/admin/Users.js';
 import JobsAdmin from './pages/admin/Jobs.js';
-import { useEffect, useState, type ReactNode } from 'react';
+import OllamaSettings from './pages/admin/OllamaSettings.js';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import QRCode from 'qrcode';
 
 function useWsConnection(hasAuth: boolean) {
   useEffect(() => {
@@ -196,6 +198,17 @@ function TotpSetupForm({
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      void QRCode.toCanvas(canvasRef.current, pendingStep.totpUri, {
+        width: 200,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+    }
+  }, [pendingStep.totpUri]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,16 +230,13 @@ function TotpSetupForm({
   return (
     <form onSubmit={(e) => void submit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', width: '100%' }}>
       <div style={{ textAlign: 'center' }}>
-        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '0 0 var(--space-2)' }}>
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '0 0 var(--space-3)' }}>
           Scan this code with your authenticator app<br />
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>(Google Authenticator, Authy, 1Password…)</span>
         </p>
-        <a
-          href={pendingStep.totpUri}
-          style={{ fontSize: 'var(--text-xs)', color: 'var(--accent)', wordBreak: 'break-all' }}
-        >
-          Open in authenticator app
-        </a>
+        <div style={{ display: 'inline-block', background: '#fff', padding: '8px', borderRadius: 'var(--radius-sm)' }}>
+          <canvas ref={canvasRef} />
+        </div>
       </div>
       <div style={{ background: 'var(--bg-app)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-2) var(--space-3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
@@ -330,6 +340,7 @@ function TopBar({ user, logout }: { user: User | null; logout: () => Promise<voi
               <Link to="/admin/flags" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Flags</Link>
               <Link to="/admin/users" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Users</Link>
               <Link to="/admin/jobs" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Jobs</Link>
+              <Link to="/admin/ollama" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}>Ollama</Link>
             </>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
@@ -387,6 +398,7 @@ export default function App() {
                   <Route path="/admin/flags" element={<AdminRoute user={user}><FlagsAdmin /></AdminRoute>} />
                   <Route path="/admin/users" element={<AdminRoute user={user}><UsersAdmin /></AdminRoute>} />
                   <Route path="/admin/jobs" element={<AdminRoute user={user}><JobsAdmin /></AdminRoute>} />
+                  <Route path="/admin/ollama" element={<AdminRoute user={user}><OllamaSettings /></AdminRoute>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>
