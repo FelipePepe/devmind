@@ -5,6 +5,7 @@ import { generateTotpSetup, verifyTotpCode } from './totp.js';
 import { sign, verifyRefresh } from './jwt.js';
 import { authMiddleware } from './middleware.js';
 import { rateLimitMiddleware } from './rate-limit.js';
+import { logger } from '../logger.js';
 import type { UsersRepo } from '../db/repos/users.js';
 import type { ChallengesRepo } from '../db/repos/challenges.js';
 import type { WsManager } from '../realtime/ws-manager.js';
@@ -64,6 +65,7 @@ export function createAuthRouter(
       return c.json({ error: 'password must be at least 8 characters' }, 400);
     }
     if (users.findByUsername(username)) {
+      logger.warn({ username }, 'Auth: register failed - username taken');
       return c.json({ error: 'Username already taken', code: 'DUPLICATE_USERNAME' }, 409);
     }
 
@@ -81,6 +83,7 @@ export function createAuthRouter(
     const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
     challenges.create(confirmToken, 'register_confirm', expiresAt, user.id);
 
+    logger.info({ userId: user.id, username }, 'Auth: user registered');
     return c.json({ totpUri, totpSecret, confirmToken });
   });
 
@@ -124,10 +127,16 @@ export function createAuthRouter(
     }
 
     const user = users.findByUsername(username);
-    if (!user) return c.json({ error: 'Invalid credentials' }, 401);
+    if (!user) {
+      logger.warn({ username }, 'Auth: login failed - user not found');
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
 
     const valid = await verifyPassword(password, user.password_hash);
-    if (!valid) return c.json({ error: 'Invalid credentials' }, 401);
+    if (!valid) {
+      logger.warn({ userId: user.id, username }, 'Auth: login failed - invalid password');
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
 
     if (!user.totp_confirmed) {
       return c.json({ error: 'MFA setup not completed. Please complete registration.' }, 403);
@@ -137,6 +146,7 @@ export function createAuthRouter(
     const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
     challenges.create(mfaToken, 'mfa_login', expiresAt, user.id);
 
+    logger.info({ userId: user.id, username }, 'Auth: login step 1 OK (MFA requested)');
     return c.json({ mfaRequired: true, mfaToken });
   });
 
@@ -160,26 +170,33 @@ export function createAuthRouter(
     if (!user) return c.json({ error: 'User not found' }, 404);
 
     if (!verifyTotpCode(user.totp_secret!, code)) {
+      logger.warn({ userId: user.id }, 'Auth: MFA code invalid');
       return c.json({ error: 'Invalid TOTP code' }, 401);
     }
 
     const { accessToken, refreshToken } = await sign(user.id, user.is_admin === 1);
     issueRefreshCookie(c, refreshToken);
+    logger.info({ userId: user.id }, 'Auth: login complete (MFA verified)');
     return c.json({ accessToken, user: toAuthUser(user) });
   });
 
   // ── Session management ────────────────────────────────────────────────────
   router.post('/refresh', async (c) => {
     const refreshToken = getCookie(c, REFRESH_COOKIE);
-    if (!refreshToken) return c.json({ error: 'No refresh token' }, 401);
+    if (!refreshToken) {
+      logger.warn('Auth: refresh failed - no refresh token');
+      return c.json({ error: 'No refresh token' }, 401);
+    }
     try {
       const { userId } = await verifyRefresh(refreshToken);
       const user = users.findById(userId);
       if (!user) return c.json({ error: 'User not found' }, 401);
       const { accessToken, refreshToken: newRefresh } = await sign(userId, user.is_admin === 1);
       issueRefreshCookie(c, newRefresh);
+      logger.info({ userId }, 'Auth: token refreshed');
       return c.json({ accessToken, user: toAuthUser(user) });
     } catch {
+      logger.warn({ userId: 'unknown' }, 'Auth: refresh failed - invalid token');
       return c.json({ error: 'Invalid refresh token' }, 401);
     }
   });
@@ -192,7 +209,9 @@ export function createAuthRouter(
   });
 
   router.delete('/logout', authMiddleware, (c) => {
+    const userId = c.get('userId');
     deleteCookie(c, REFRESH_COOKIE, { path: '/' });
+    logger.info({ userId }, 'Auth: logout');
     return c.json({ ok: true });
   });
 

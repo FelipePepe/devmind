@@ -14,6 +14,7 @@ import type { StorageService } from '../storage/storage.js';
 import type { ProjectsRepo } from '../db/repos/projects.js';
 import type { ScreensRepo } from '../db/repos/screens.js';
 import type { ProjectFilesRepo } from '../db/repos/project-files.js';
+import type { SettingsRepo } from '../db/repos/settings.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
 
@@ -92,6 +93,7 @@ export interface ChatRouterDeps {
   projects: ProjectsRepo;
   screens: ScreensRepo;
   projectFiles: ProjectFilesRepo;
+  settings: SettingsRepo;
 }
 
 export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
@@ -103,13 +105,20 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
     const bodyRaw = await c.req.json<unknown>().catch(() => null);
     const parsed = ChatBodySchema.safeParse(bodyRaw);
     if (!parsed.success) {
+      logger.warn({ userId, errors: parsed.error.flatten() }, 'Chat: invalid request body');
       return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
     }
 
     const { sessionId, content, projectId } = parsed.data;
+    logger.info({ userId, sessionId, projectId, contentLength: content.length }, 'Chat: message received');
+
+    const model = deps.settings.get('ollama.coding_model') ?? config.OLLAMA_CODING_MODEL;
 
     const session = deps.sessions.findById(userId, sessionId);
-    if (!session) return c.json({ error: 'Session not found' }, 404);
+    if (!session) {
+      logger.warn({ userId, sessionId }, 'Chat: session not found');
+      return c.json({ error: 'Session not found' }, 404);
+    }
 
     let projectCtx: ProjectContext | undefined;
     if (projectId) {
@@ -148,7 +157,8 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
         data: JSON.stringify({ messageId: userMsg.id }),
       });
 
-      const agentRun = deps.agentRuns.create(sessionId, userId, config.OLLAMA_CODING_MODEL);
+      const agentRun = deps.agentRuns.create(sessionId, userId, model);
+      logger.info({ agentRunId: agentRun.id, sessionId, model, historyLength: history.length }, 'Chat: agent run started');
 
       const registry = createToolRegistry(
         {
@@ -162,25 +172,38 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
       );
 
       await runAgentLoop({
-        model: config.OLLAMA_CODING_MODEL,
+        model,
         messages: ollamaMessages,
         registry,
         ctx: {
           userId,
           sessionId,
           workspaceRoot: config.WORKSPACE_ROOT,
-          projectId,
+          ...(projectId !== undefined ? { projectId } : {}),
           signal: abort.signal,
         },
         callbacks: {
+          async onIterationStart(iteration, model, messages, toolCount) {
+            logger.info({ iteration, model, messagesCount: messages.length, toolCount }, 'Chat: agent iteration started');
+            const truncated = messages.map((m) => ({
+              ...m,
+              content: m.content.length > 2000 ? m.content.slice(0, 2000) + '\n…[truncated]' : m.content,
+            }));
+            await stream.writeSSE({
+              event: 'agent_request',
+              data: JSON.stringify({ iteration, model, messages: truncated, toolCount }),
+            });
+          },
           async onToken(chunk) {
             assistantContent += chunk;
             await stream.writeSSE({ event: 'token', data: JSON.stringify({ content: chunk }) });
           },
           async onToolCall(name, args) {
+            logger.info({ tool: name, args }, 'Chat: tool call');
             await stream.writeSSE({ event: 'tool_call', data: JSON.stringify({ name, args }) });
           },
           async onToolResult(result) {
+            logger.info({ tool: result.name, error: result.error }, 'Chat: tool result');
             deps.messages.create(sessionId, 'tool', result.content, agentRun.id);
             await stream.writeSSE({
               event: 'tool_result',
@@ -188,6 +211,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
             });
           },
           async onDone(iterations) {
+            logger.info({ agentRunId: agentRun.id, iterations, responseLength: assistantContent.length }, 'Chat: agent run completed');
             deps.agentRuns.finish(agentRun.id, iterations);
             const assistantMsg = deps.messages.create(
               sessionId,
@@ -211,6 +235,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
       });
 
       if (abort.signal.aborted) {
+        logger.info({ agentRunId: agentRun.id }, 'Chat: client disconnected, aborting');
         const run = deps.agentRuns.findById(agentRun.id);
         if (run?.status === 'running') deps.agentRuns.cancel(agentRun.id);
       }

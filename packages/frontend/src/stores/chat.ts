@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { type ToolEvent } from '../types/index.js';
 import { getAccessToken } from '../lib/api.js';
 import { readSSE } from '../lib/sse.js';
+import { useLogStore } from './log.js';
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -44,6 +45,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const abort = new AbortController();
     set({ _abortController: abort, error: null, streamingContent: '', toolEvents: [], isStreaming: true });
 
+    const log = useLogStore.getState();
+    log.clearEntries();
+    log.resetResponse();
+    log.addEntry({ type: 'request', label: 'Chat: Message Sent', content: content.substring(0, 100) + (content.length > 100 ? '...' : '') });
+
     try {
       const token = getAccessToken();
       const response = await fetch('/api/chat', {
@@ -65,16 +71,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       let activeToolCallId: string | null = null;
 
       for await (const { event, data } of readSSE(response, abort.signal)) {
-        if (event === 'token') {
+        if (event === 'agent_request') {
+          const info = JSON.parse(data) as { iteration: number; model: string; messages: unknown[]; toolCount: number };
+          log.resetResponse();
+          log.addEntry({
+            type: 'request',
+            label: `Iteration ${info.iteration + 1} — ${info.model} · ${info.toolCount} tools`,
+            content: JSON.stringify(info.messages, null, 2),
+          });
+        } else if (event === 'token') {
           const { content: chunk } = JSON.parse(data) as { content: string };
           set((s) => ({ streamingContent: s.streamingContent + chunk }));
+          log.appendToResponse(chunk);
         } else if (event === 'tool_call') {
           const { name, args } = JSON.parse(data) as { name: string; args: string };
+          log.resetResponse();
+          log.addEntry({ type: 'tool_call', label: `tool: ${name}`, content: args });
           const id = generateId();
           activeToolCallId = id;
           set((s) => ({ toolEvents: [...s.toolEvents, { id, name, args }] }));
         } else if (event === 'tool_result') {
-          const { content: result, error: isError } = JSON.parse(data) as { name: string; content: string; error?: boolean };
+          const { content: result, error: isError, name } = JSON.parse(data) as { name: string; content: string; error?: boolean };
+          log.addEntry({
+            type: 'tool_result',
+            label: `result: ${name ?? ''}${isError ? ' (error)' : ''}`,
+            content: result,
+          });
           if (activeToolCallId) {
             const id = activeToolCallId;
             set((s) => ({
@@ -85,11 +107,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             activeToolCallId = null;
           }
         } else if (event === 'done') {
+          log.addEntry({ type: 'done', label: 'Done', content: '' });
+          log.resetResponse();
           set({ isStreaming: false, streamingContent: '', toolEvents: [] });
           onDone();
           return;
         } else if (event === 'error') {
           const { message } = JSON.parse(data) as { message: string };
+          log.addEntry({ type: 'error', label: 'Error', content: message });
           throw new Error(message);
         }
       }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { type Session, type ChatMessage } from '../types/index.js';
 import { apiFetch } from '../lib/api.js';
+import { useLogStore } from './log.js';
 
 interface SessionState {
   sessions: Session[];
@@ -47,21 +48,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   createSession: async () => {
+    useLogStore.getState().addEntry({ type: 'request', label: 'Session: Create', content: 'Creating new session...' });
     const session = await apiFetch<Session>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify({ title: 'New Session' }),
       headers: { 'Content-Type': 'application/json' },
     });
     set((s) => ({ sessions: [session, ...s.sessions], currentSessionId: session.id }));
+    useLogStore.getState().addEntry({ type: 'response', label: 'Session: Created', content: `ID: ${session.id}` });
     await get().reloadMessages();
   },
 
   deleteSession: async (id) => {
+    useLogStore.getState().addEntry({ type: 'request', label: 'Session: Delete', content: id });
     await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' });
     const { sessions, currentSessionId } = get();
     const remaining = sessions.filter((s) => s.id !== id);
     const nextId = currentSessionId === id ? (remaining[0]?.id ?? null) : currentSessionId;
     set({ sessions: remaining, currentSessionId: nextId });
+    useLogStore.getState().addEntry({ type: 'response', label: 'Session: Deleted', content: id });
     if (nextId) {
       await get().reloadMessages();
     } else {

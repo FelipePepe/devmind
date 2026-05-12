@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { type User, type PendingStep } from '../types/index.js';
 import { apiFetch, setAccessToken } from '../lib/api.js';
+import { useLogStore } from './log.js';
 
 interface AuthState {
   user: User | null;
@@ -20,6 +21,12 @@ let moduleToken: string | null = null;
 function applyAuthState(result: { accessToken: string; user: User }): void {
   moduleToken = result.accessToken;
   setAccessToken(moduleToken);
+  console.log('[INFO][auth] Auth state applied, user:', result.user.username);
+  useLogStore.getState().addEntry({
+    type: 'response',
+    label: 'Auth',
+    content: `Logged in as ${result.user.username} (${result.user.display_name})`,
+  });
   useAuthStore.setState({
     user: result.user,
     accessToken: moduleToken,
@@ -35,6 +42,8 @@ export const useAuthStore = create<AuthState>(() => ({
   pendingStep: { step: 'idle' },
 
   login: async (username, password) => {
+    console.log('[INFO][auth] Login attempt for:', username);
+    useLogStore.getState().addEntry({ type: 'request', label: 'Auth: Login', content: username });
     useAuthStore.setState({ isLoading: true });
     try {
       const res = await apiFetch<
@@ -46,11 +55,15 @@ export const useAuthStore = create<AuthState>(() => ({
         headers: { 'Content-Type': 'application/json' },
       });
       if ('mfaRequired' in res && res.mfaRequired) {
+        console.log('[INFO][auth] MFA required');
+        useLogStore.getState().addEntry({ type: 'request', label: 'Auth: MFA Required', content: 'Enter TOTP code' });
         useAuthStore.setState({ pendingStep: { step: 'mfa', mfaToken: res.mfaToken }, isLoading: false });
       } else {
         applyAuthState(res as { accessToken: string; user: User });
       }
     } catch (err) {
+      console.error('[ERROR][auth] Login failed:', err);
+      useLogStore.getState().addEntry({ type: 'error', label: 'Auth: Login Failed', content: err instanceof Error ? err.message : String(err) });
       useAuthStore.setState({ isLoading: false });
       throw err;
     }
@@ -59,6 +72,7 @@ export const useAuthStore = create<AuthState>(() => ({
   confirmMfa: async (code) => {
     const { pendingStep } = useAuthStore.getState();
     if (pendingStep.step !== 'mfa') return;
+    console.log('[INFO][auth] Confirming MFA...');
     useAuthStore.setState({ isLoading: true });
     try {
       const result = await apiFetch<{ accessToken: string; user: User }>('/auth/login/mfa', {
@@ -68,12 +82,15 @@ export const useAuthStore = create<AuthState>(() => ({
       });
       applyAuthState(result);
     } catch (err) {
+      console.error('[ERROR][auth] MFA confirm failed:', err);
       useAuthStore.setState({ isLoading: false });
       throw err;
     }
   },
 
   register: async (username, password, displayName) => {
+    console.log('[INFO][auth] Register attempt:', username);
+    useLogStore.getState().addEntry({ type: 'request', label: 'Auth: Register', content: username });
     useAuthStore.setState({ isLoading: true });
     try {
       const res = await apiFetch<{ totpUri: string; totpSecret: string; confirmToken: string }>(
@@ -84,6 +101,8 @@ export const useAuthStore = create<AuthState>(() => ({
           headers: { 'Content-Type': 'application/json' },
         }
       );
+      console.log('[INFO][auth] Register OK, awaiting TOTP confirm');
+      useLogStore.getState().addEntry({ type: 'request', label: 'Auth: TOTP Setup', content: 'Scan QR code and enter TOTP code' });
       useAuthStore.setState({
         pendingStep: {
           step: 'register-totp',
@@ -94,6 +113,8 @@ export const useAuthStore = create<AuthState>(() => ({
         isLoading: false,
       });
     } catch (err) {
+      console.error('[ERROR][auth] Register failed:', err);
+      useLogStore.getState().addEntry({ type: 'error', label: 'Auth: Register Failed', content: err instanceof Error ? err.message : String(err) });
       useAuthStore.setState({ isLoading: false });
       throw err;
     }
@@ -120,6 +141,8 @@ export const useAuthStore = create<AuthState>(() => ({
   },
 
   logout: async () => {
+    console.log('[INFO][auth] Logout');
+    useLogStore.getState().addEntry({ type: 'response', label: 'Auth: Logout', content: 'Session ended' });
     await apiFetch('/auth/logout', { method: 'DELETE' }).catch(() => null);
     moduleToken = null;
     setAccessToken(null);
