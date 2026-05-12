@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ToolEvent } from '../../hooks/useChatStore.js';
+import type { ToolEvent } from '../../types/index.js';
 
 interface AgentConsoleProps {
   toolEvents: ToolEvent[];

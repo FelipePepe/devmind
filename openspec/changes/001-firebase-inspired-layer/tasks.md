@@ -1,5 +1,12 @@
 # Tasks: 001 — Firebase-Inspired Layer
 
+> **SUPERSEDED** — This change assumed WebAuthn passkeys and a chat-first architecture.
+> The codebase has since moved to password+MFA auth (`feature/password-mfa-auth`) and a
+> project-first studio architecture (`002-project-first-builder`). All relevant tasks
+> were reimplemented from scratch. This document is kept for historical reference only.
+
+
+
 ## Phase 0 — Infrastructure & Setup [infra]
 
 - [ ] 0.1 [backend] Add `@simplewebauthn/server`, `jose`, `web-push`, `@types/web-push`, `file-type` to `packages/backend/package.json` (W3: `file-type` for server-side MIME detection)

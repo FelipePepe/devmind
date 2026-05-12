@@ -3,6 +3,8 @@ import { getDb } from './db.js';
 import { JobQueueClient } from './jobs.js';
 import { indexCodebase, type IndexCodebasePayload } from './handlers/index-codebase.js';
 import { archiveSessions } from './handlers/archive-sessions.js';
+import { generateProject, type GenerateProjectPayload } from './handlers/generate-project.js';
+import { rebuildPreview, type RebuildPreviewPayload } from './handlers/rebuild-preview.js';
 import type { Job } from './jobs.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -20,14 +22,28 @@ async function dispatch(job: Job): Promise<void> {
   try {
     switch (job.type) {
       case 'indexCodebase':
+        logger.info({ jobId: job.id }, 'Job: indexCodebase starting');
         await indexCodebase(
           JSON.parse(job.payload) as IndexCodebasePayload,
           jobs,
           job.id
         );
+        logger.info({ jobId: job.id }, 'Job: indexCodebase completed');
         break;
       case 'archiveSessions':
+        logger.info({ jobId: job.id }, 'Job: archiveSessions starting');
         await archiveSessions(jobs, job.id);
+        logger.info({ jobId: job.id }, 'Job: archiveSessions completed');
+        break;
+      case 'generateProject':
+        logger.info({ jobId: job.id }, 'Job: generateProject starting');
+        await generateProject(JSON.parse(job.payload) as GenerateProjectPayload, jobs, job.id);
+        logger.info({ jobId: job.id }, 'Job: generateProject completed');
+        break;
+      case 'rebuildPreview':
+        logger.info({ jobId: job.id }, 'Job: rebuildPreview starting');
+        await rebuildPreview(JSON.parse(job.payload) as RebuildPreviewPayload, jobs, job.id);
+        logger.info({ jobId: job.id }, 'Job: rebuildPreview completed');
         break;
       default:
         logger.warn({ type: job.type }, 'Unknown job type');
@@ -52,9 +68,13 @@ async function tick(): Promise<void> {
   try {
     jobs.resetStuckJobs();
     const job = jobs.dequeueNext();
-    if (job) await dispatch(job);
+    if (job) {
+      logger.info({ jobId: job.id, type: job.type }, 'Workers: job dequeued');
+      await dispatch(job);
+    }
     tickCount++;
     if (tickCount % 100 === 0) {
+      logger.info({ tickCount }, 'Workers: checkpoint');
       db.pragma('wal_checkpoint(PASSIVE)');
     }
   } finally {

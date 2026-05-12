@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import { useMemo } from 'react';
-import type { ChatMessage } from '../../hooks/useChatStore.js';
+import type { ChatMessage } from '../../types/index.js';
 
 marked.setOptions({ breaks: true, gfm: true });
 
