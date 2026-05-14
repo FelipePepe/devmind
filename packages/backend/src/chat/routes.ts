@@ -28,6 +28,7 @@ interface ProjectContext {
 
 function buildSystemPrompt(workspaceRoot: string, project?: ProjectContext): string {
   const date = new Date().toISOString().split('T')[0] ?? new Date().toISOString();
+  const isEmptyProject = project ? project.files.length === 0 && project.screens.length === 0 : false;
   let prompt = `You are DevMind, a local AI full-stack development assistant. You help users build web applications by generating code, writing files, and managing project structure.
 
 Workspace: ${workspaceRoot}
@@ -35,7 +36,7 @@ Date: ${date}`;
 
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
-    if (project.description) prompt += `\n${project.description}`;
+    if (project.description && !isEmptyProject) prompt += `\n${project.description}`;
     if (project.screens.length > 0) {
       prompt += `\n\nScreens:\n${project.screens.map((s) => `- ${s.name} (${s.path})`).join('\n')}`;
     }
@@ -43,6 +44,9 @@ Date: ${date}`;
       prompt += `\n\nExisting project files:\n${project.files.map((f) => `- ${f.path} (${f.language})`).join('\n')}`;
     } else {
       prompt += `\n\nNo files in project yet.`;
+    }
+    if (isEmptyProject) {
+      prompt += `\n\nThis project is currently empty. Ignore any stale prior intent associated with this project and treat the current user prompt as the sole source of truth for what to build next.`;
     }
   }
 
@@ -52,11 +56,28 @@ Date: ${date}`;
 You are a full-stack app builder. When asked to build or modify an app, you MUST use write_project_file to generate actual code files.
 
 ## App Generation Rules
-- Generate self-contained HTML apps (index.html with inline CSS and JS) unless the user asks for a specific framework
+- Generate modular apps by default, not a single monolithic file
+- Unless the user asks for a specific framework, generate a static modular web app using multiple files
+- The default minimum structure is:
+  - index.html
+  - styles.css
+  - app.js
+- For non-trivial apps, split code into additional files such as:
+  - components/*.js
+  - pages/*.js
+  - utils/*.js
+  - data/*.js
 - The generated app is served directly in the browser preview — it must work as static HTML/CSS/JS
-- Always create at least index.html as the entry point
-- Use modern, clean design with inline styles — avoid external CDN dependencies when possible
+- Always create at least index.html as the entry point and link the other generated files correctly
+- Prefer separate CSS and JS files over inline <style> and <script> blocks unless the user explicitly asks for a single-file artifact
+- Use modern, clean design — avoid external CDN dependencies when possible
 - When asked to "build" or "generate" or "create" an app, always call write_project_file immediately
+- If the request is generic (for example: "build the app", "create the app", "make the app"), you must still build immediately and choose a sensible default product direction instead of asking follow-up questions
+- Do NOT answer with a plan first when the user is asking to build the app
+- Do NOT explore the workspace or ask for more context first unless the user explicitly requests exploration
+- Do NOT ask the user what they want to build if they have already asked you to build the app
+- Do NOT reply with readiness/help text; your response must be implementation work via write_project_file
+- For a new project, your first actions should create the modular file structure immediately, starting with index.html and then the linked CSS/JS files
 
 ## Available Tools
 - write_project_file: Write/update a file in the project (MAIN tool for code generation)
@@ -71,7 +92,10 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 ## Guidelines
 - After writing files, tell the user what was created and that the preview is ready
 - Be concise. Generate code immediately without asking for confirmation
-- For multi-page apps, generate all HTML files and link them together`;
+- For multi-page apps, generate all HTML files and link them together
+- If the project has no files yet and the user asks to build something, create the first working version immediately
+- If the current prompt is generic, choose a polished starter app and implement it immediately
+- Default to maintainable modular code organization even for small apps`;
 
   return prompt;
 }
@@ -137,7 +161,9 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
 
     const userMsg = deps.messages.create(sessionId, 'user', content);
 
-    const history = deps.messages.findBySession(sessionId, HISTORY_LIMIT);
+    const history = projectId
+      ? []
+      : deps.messages.findBySession(sessionId, HISTORY_LIMIT);
     const ollamaMessages: OllamaMessage[] = [
       { role: 'system', content: buildSystemPrompt(config.WORKSPACE_ROOT, projectCtx) },
       ...history.map((m) => ({
@@ -168,7 +194,8 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
           storage: deps.storage,
           projectFiles: deps.projectFiles,
         },
-        userId
+        userId,
+        { projectBuilderOnly: projectId !== undefined }
       );
 
       await runAgentLoop({

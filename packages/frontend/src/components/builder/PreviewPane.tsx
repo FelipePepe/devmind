@@ -2,7 +2,7 @@ import { useRef } from 'react';
 
 interface PreviewPaneProps {
   previewUrl: string | null;
-  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
+  iframeRef?: React.MutableRefObject<HTMLIFrameElement | null>;
 }
 
 export function PreviewPane({ previewUrl, iframeRef: externalRef }: PreviewPaneProps) {

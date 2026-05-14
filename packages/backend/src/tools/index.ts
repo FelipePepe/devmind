@@ -24,17 +24,29 @@ export interface ToolServices {
   projectFiles?: ProjectFilesRepo;
 }
 
-export function createToolRegistry(services: ToolServices, userId: string): ToolRegistry {
-  const registry = new ToolRegistry().register(
-    fileReadTool,
-    fileListTool,
-    searchCodeTool,
-    runCommandTool,
-    vectorSearchTool,
-    createSessionHistoryTool(services.messages, services.sessions, userId),
-    createTaskUpdateTool(services.tasks),
-    createArtifactListTool(services.storage, userId)
-  );
+export interface ToolRegistryOptions {
+  projectBuilderOnly?: boolean;
+}
+
+export function createToolRegistry(
+  services: ToolServices,
+  userId: string,
+  options: ToolRegistryOptions = {}
+): ToolRegistry {
+  const registry = new ToolRegistry();
+
+  if (!options.projectBuilderOnly) {
+    registry.register(
+      fileReadTool,
+      fileListTool,
+      searchCodeTool,
+      runCommandTool,
+      vectorSearchTool,
+      createSessionHistoryTool(services.messages, services.sessions, userId),
+      createTaskUpdateTool(services.tasks),
+      createArtifactListTool(services.storage, userId)
+    );
+  }
 
   if (services.projectFiles) {
     registry.register(...createProjectFileTools(services.projectFiles));

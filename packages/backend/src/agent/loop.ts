@@ -9,6 +9,12 @@ import type { OllamaMessage, ChatStreamParams } from '../ollama/types.js';
 const MAX_ITERATIONS = 8;
 
 export interface AgentCallbacks {
+  onIterationStart?(
+    iteration: number,
+    model: string,
+    messages: OllamaMessage[],
+    toolCount: number
+  ): Promise<void>;
   onToken(content: string): Promise<void>;
   onToolCall(name: string, args: string): Promise<void>;
   onToolResult(result: ToolResult): Promise<void>;
@@ -41,6 +47,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (ctx.signal?.aborted) return;
 
     const params: ChatStreamParams = { model, messages, tools };
+    await callbacks.onIterationStart?.(iteration, model, messages, tools.length);
     let assistantContent = '';
     let finishReason: 'stop' | 'tool_calls' | 'length' | undefined;
     const pendingToolCalls: Array<{ name: string; args: string; id: string }> = [];

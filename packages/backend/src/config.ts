@@ -63,4 +63,9 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export const config = ConfigSchema.parse(process.env);
+export let config: Config = ConfigSchema.parse(process.env);
+
+export function parseConfig(): Config {
+  config = ConfigSchema.parse(process.env);
+  return config;
+}

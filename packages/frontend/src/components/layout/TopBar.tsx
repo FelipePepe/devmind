@@ -1,9 +1,13 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.js';
+import { useLogStore } from '../../stores/log.js';
 
 export function TopBar() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const entryCount = useLogStore((s) => s.entries.length);
+  const isOpen = useLogStore((s) => s.isOpen);
+  const setOpen = useLogStore((s) => s.setOpen);
 
   return (
     <header className="top-bar">
@@ -25,6 +29,9 @@ export function TopBar() {
             </>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!isOpen)}>
+              Console{entryCount > 0 ? ` (${entryCount})` : ''}
+            </button>
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
               {user.display_name ?? user.username}
             </span>

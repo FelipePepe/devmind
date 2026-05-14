@@ -108,7 +108,11 @@ export function createBuilderRouter(
       return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
     }
 
-    projects.update(userId, projectId, parsed.data);
+    const patch: { name?: string; description?: string | null } = {};
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if (parsed.data.description !== undefined) patch.description = parsed.data.description;
+
+    projects.update(userId, projectId, patch);
     return c.json(projects.findById(userId, projectId));
   });
 
@@ -212,7 +216,13 @@ export function createBuilderRouter(
     if (!parsed.success) {
       return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
     }
-    const resource = appResources.create(projectId, parsed.data);
+    const resourceInput: { type: AppResourceType; name: string; config?: Record<string, unknown> } = {
+      type: parsed.data.type,
+      name: parsed.data.name,
+    };
+    if (parsed.data.config !== undefined) resourceInput.config = parsed.data.config;
+
+    const resource = appResources.create(projectId, resourceInput);
     return c.json(resource, 201);
   });
 
@@ -230,7 +240,10 @@ export function createBuilderRouter(
     if (!parsed.success) {
       return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
     }
-    return c.json(appResources.update(rid, parsed.data));
+    const patch: { name?: string; config?: Record<string, unknown> } = {};
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if (parsed.data.config !== undefined) patch.config = parsed.data.config;
+    return c.json(appResources.update(rid, patch));
   });
 
   router.delete('/projects/:id/app-resources/:rid', authMiddleware, (c) => {
@@ -336,7 +349,10 @@ export function createBuilderRouter(
     if (!parsed.success) {
       return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
     }
-    const updated = components.update(componentId, parsed.data);
+    const patch: { name?: string; content?: string } = {};
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if (parsed.data.content !== undefined) patch.content = parsed.data.content;
+    const updated = components.update(componentId, patch);
     return c.json(updated);
   });
 

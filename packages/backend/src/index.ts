@@ -101,7 +101,12 @@ async function start(): Promise<void> {
 
   app.onError((err, c) => {
     logger.error({ err, method: c.req.method, path: c.req.url }, 'Unhandled error');
-    return c.json({ error: 'Internal server error' }, 500);
+    return c.json(
+      {
+        error: config.NODE_ENV === 'development' ? err.message : 'Internal server error',
+      },
+      500
+    );
   });
 
   app.route('/auth', createAuthRouter(users, challenges, wsManager));

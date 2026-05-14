@@ -4,6 +4,7 @@ import { apiFetch, getAccessToken } from '../lib/api.js';
 import { readSSE } from '../lib/sse.js';
 import { PreviewPane } from '../components/builder/PreviewPane.js';
 import { PromptPanel } from '../components/builder/PromptPanel.js';
+import { useLogStore } from '../stores/log.js';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.Editor })));
 
@@ -74,8 +75,19 @@ const COMPONENT_SNIPPETS = [
 type SidebarTab = 'files' | 'screens' | 'components';
 type CenterTab = 'editor' | 'preview';
 
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export default function Builder() {
   const { id } = useParams();
+  const log = useLogStore();
 
   const [project, setProject] = useState<Project | null>(null);
   const [screens, setScreens] = useState<Screen[]>([]);
@@ -101,12 +113,25 @@ export default function Builder() {
   const [streamingContent, setStreamingContent] = useState('');
   const [chatError, setChatError] = useState<string | null>(null);
 
-  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const loadFiles = async () => {
     if (!id) return;
     const fileList = await apiFetch<ProjectFileMeta[]>(`/api/projects/${id}/files`);
     setFiles(fileList);
+    if (fileList.length > 0) {
+      const stillSelected = selectedFile && fileList.some((file) => file.path === selectedFile.path);
+      if (!stillSelected) {
+        const firstFile = fileList[0];
+        if (firstFile) {
+          void openFile(firstFile.path);
+        }
+      }
+    } else if (selectedFile) {
+      setSelectedFile(null);
+      setEditorContent('');
+    }
+    return fileList;
   };
 
   useEffect(() => {
@@ -126,8 +151,9 @@ export default function Builder() {
 
       const sessions = await apiFetch<Session[]>(`/api/projects/${id}/sessions`);
       let sessionId: string;
-      if (sessions.length > 0) {
-        sessionId = sessions[0].id;
+      const firstSession = sessions[0];
+      if (firstSession) {
+        sessionId = firstSession.id;
       } else {
         const created = await apiFetch<Session>('/api/sessions', {
           method: 'POST',
@@ -209,9 +235,25 @@ export default function Builder() {
     if (!msg.trim() || !projectSessionId || isStreaming) return;
     setChatInput('');
     setChatError(null);
+    log.clearEntries();
+    log.resetResponse();
+    log.addEntry({
+      type: 'request',
+      label: `Builder prompt → project ${id ?? 'unknown'}`,
+      content: JSON.stringify(
+        {
+          projectId: id,
+          sessionId: projectSessionId,
+          prompt: msg,
+          existingFiles: files.map((file) => file.path),
+        },
+        null,
+        2
+      ),
+    });
 
     const tempUserMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: 'user',
       content: msg,
       created_at: new Date().toISOString(),
@@ -238,27 +280,89 @@ export default function Builder() {
       }
 
       for await (const { event, data } of readSSE(response)) {
-        if (event === 'token') {
+        if (event === 'user_message') {
+          const parsed = JSON.parse(data) as { messageId: string };
+          log.addEntry({
+            type: 'request',
+            label: 'Builder message persisted',
+            content: JSON.stringify(parsed, null, 2),
+          });
+        } else if (event === 'agent_request') {
+          const info = JSON.parse(data) as { iteration: number; model: string; messages: unknown[]; toolCount: number };
+          log.resetResponse();
+          log.addEntry({
+            type: 'request',
+            label: `Builder iteration ${info.iteration + 1} — ${info.model} · ${info.toolCount} tools`,
+            content: JSON.stringify(info.messages, null, 2),
+          });
+        } else if (event === 'token') {
           const { content: chunk } = JSON.parse(data) as { content: string };
           setStreamingContent((prev) => prev + chunk);
+          log.appendToResponse(chunk);
+        } else if (event === 'tool_call') {
+          const parsed = JSON.parse(data) as { name: string; args: string };
+          log.resetResponse();
+          log.addEntry({
+            type: 'tool_call',
+            label: `Builder tool: ${parsed.name}`,
+            content: parsed.args,
+          });
         } else if (event === 'tool_result') {
-          const parsed = JSON.parse(data) as { name: string; content: string };
+          const parsed = JSON.parse(data) as { name: string; content: string; error?: boolean };
+          log.addEntry({
+            type: 'tool_result',
+            label: `Builder result: ${parsed.name}${parsed.error ? ' (error)' : ''}`,
+            content: parsed.content,
+          });
           if (parsed.name === 'write_project_file') {
-            await loadFiles();
+            const refreshedFiles = await loadFiles();
+            log.addEntry({
+              type: 'tool_result',
+              label: 'Builder files refreshed',
+              content: JSON.stringify(
+                {
+                  count: refreshedFiles?.length ?? 0,
+                  files: (refreshedFiles ?? []).map((file) => file.path),
+                },
+                null,
+                2
+              ),
+            });
           }
         } else if (event === 'done') {
+          const doneInfo = JSON.parse(data) as { messageId: string; agentRunId: string };
           const msgs = await apiFetch<ChatMessage[]>(`/api/sessions/${projectSessionId}/messages`);
           setChatMessages(msgs);
           setStreamingContent('');
           setIsStreaming(false);
-          await loadFiles();
+          const refreshedFiles = await loadFiles();
+          log.addEntry({
+            type: 'done',
+            label: 'Builder run completed',
+            content: JSON.stringify(
+              {
+                ...doneInfo,
+                finalMessageCount: msgs.length,
+                fileCount: refreshedFiles?.length ?? 0,
+                files: (refreshedFiles ?? []).map((file) => file.path),
+              },
+              null,
+              2
+            ),
+          });
           return;
         } else if (event === 'error') {
           const { message } = JSON.parse(data) as { message: string };
+          log.addEntry({ type: 'error', label: 'Builder stream error', content: message });
           throw new Error(message);
         }
       }
     } catch (err) {
+      log.addEntry({
+        type: 'error',
+        label: 'Builder submit failed',
+        content: err instanceof Error ? err.message : 'Chat error',
+      });
       setChatError(err instanceof Error ? err.message : 'Chat error');
     } finally {
       setIsStreaming(false);
