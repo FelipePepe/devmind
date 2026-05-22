@@ -4,6 +4,7 @@ import { apiFetch, getAccessToken } from '../lib/api.js';
 import { readSSE } from '../lib/sse.js';
 import { PreviewPane } from '../components/builder/PreviewPane.js';
 import { PromptPanel } from '../components/builder/PromptPanel.js';
+import { ServicesPanel } from '../components/builder/ServicesPanel.js';
 import { useLogStore } from '../stores/log.js';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.Editor })));
@@ -59,6 +60,118 @@ interface Preview {
   updated_at: string;
 }
 
+interface PreviewTicket {
+  url: string;
+  expiresAt: string;
+}
+
+interface ProjectManifest {
+  id: string;
+  project_id: string;
+  version: number;
+  app_type: string;
+  stack: Record<string, unknown>;
+  commands: Record<string, unknown>;
+  entrypoints: Record<string, unknown>;
+  updated_at: string;
+}
+
+interface ProjectService {
+  id: string;
+  project_id: string;
+  kind: 'frontend' | 'backend' | 'worker';
+  name: string;
+  root_path: string;
+  runtime: string;
+  port: number | null;
+  status: 'planned' | 'generating' | 'ready' | 'failed' | 'disabled';
+  config: Record<string, unknown>;
+  updated_at: string;
+}
+
+interface ProjectApiRoute {
+  id: string;
+  project_id: string;
+  service_id: string | null;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  handler_path: string;
+  request_schema: Record<string, unknown>;
+  response_schema: Record<string, unknown>;
+  updated_at: string;
+}
+
+interface ProjectDbSchema {
+  id: string;
+  project_id: string;
+  engine: string;
+  name: string;
+  schema: Record<string, unknown>;
+  updated_at: string;
+}
+
+interface ProjectDbMigration {
+  id: string;
+  project_id: string;
+  schema_id: string | null;
+  version: number;
+  name: string;
+  content: string;
+  status: 'draft' | 'generated' | 'applied' | 'failed';
+  applied_at: string | null;
+  updated_at: string;
+}
+
+interface ProjectDatabaseState {
+  schemas: ProjectDbSchema[];
+  migrations: ProjectDbMigration[];
+}
+
+interface ProjectEnvVar {
+  id: string;
+  project_id: string;
+  service_id: string | null;
+  name: string;
+  required: boolean;
+  secret_ref: string | null;
+  default_value: string | null;
+  description: string | null;
+  updated_at: string;
+}
+
+interface ProjectValidationReport {
+  id: string;
+  project_id: string;
+  run_id: string | null;
+  status: 'pending' | 'pass' | 'fail';
+  checks: unknown[];
+  log_excerpt: string | null;
+  created_at: string;
+}
+
+interface ProjectRuntimeInstance {
+  id: string;
+  project_id: string;
+  preview_id: string | null;
+  status: 'pending' | 'building' | 'ready' | 'failed' | 'stale' | 'stopped';
+  frontend_url: string | null;
+  backend_url: string | null;
+  ports: Record<string, unknown>;
+  error: string | null;
+  updated_at: string;
+}
+
+interface ProjectSnapshot {
+  id: string;
+  project_id: string;
+  run_id: string | null;
+  label: string | null;
+  manifest: Record<string, unknown>;
+  file_tree: unknown[];
+  resource_graph: Record<string, unknown>;
+  created_at: string;
+}
+
 const COMPONENT_SNIPPETS = [
   { label: 'Navbar', icon: '≡', prompt: 'Add a responsive navigation bar at the top with the app name and navigation links' },
   { label: 'Hero', icon: '★', prompt: 'Add a hero section with a large heading, subtitle, and a call-to-action button' },
@@ -72,7 +185,7 @@ const COMPONENT_SNIPPETS = [
   { label: 'Dashboard', icon: '◈', prompt: 'Add a dashboard layout with stat cards showing key metrics' },
 ] as const;
 
-type SidebarTab = 'files' | 'screens' | 'components';
+type SidebarTab = 'files' | 'screens' | 'components' | 'services' | 'api' | 'database' | 'env' | 'validation' | 'runtime' | 'snapshots';
 type CenterTab = 'editor' | 'preview';
 
 function generateId(): string {
@@ -93,6 +206,15 @@ export default function Builder() {
   const [screens, setScreens] = useState<Screen[]>([]);
   const [files, setFiles] = useState<ProjectFileMeta[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [manifest, setManifest] = useState<ProjectManifest | null>(null);
+  const [services, setServices] = useState<ProjectService[]>([]);
+  const [apiRoutes, setApiRoutes] = useState<ProjectApiRoute[]>([]);
+  const [database, setDatabase] = useState<ProjectDatabaseState>({ schemas: [], migrations: [] });
+  const [envVars, setEnvVars] = useState<ProjectEnvVar[]>([]);
+  const [validationReports, setValidationReports] = useState<ProjectValidationReport[]>([]);
+  const [runtime, setRuntime] = useState<ProjectRuntimeInstance | null>(null);
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
 
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('files');
   const [centerTab, setCenterTab] = useState<CenterTab>('editor');
@@ -134,6 +256,34 @@ export default function Builder() {
     return fileList;
   };
 
+  const loadProjectStructure = async () => {
+    if (!id) return;
+    const [manifestData, serviceData, apiRoutesData, databaseData, envVarData, validationData, runtimeData, snapshotData] = await Promise.all([
+      apiFetch<ProjectManifest | null>(`/api/projects/${id}/manifest`),
+      apiFetch<ProjectService[]>(`/api/projects/${id}/services`),
+      apiFetch<ProjectApiRoute[]>(`/api/projects/${id}/api-routes`),
+      apiFetch<ProjectDatabaseState>(`/api/projects/${id}/database`),
+      apiFetch<ProjectEnvVar[]>(`/api/projects/${id}/env`),
+      apiFetch<ProjectValidationReport[]>(`/api/projects/${id}/validation`),
+      apiFetch<ProjectRuntimeInstance | null>(`/api/projects/${id}/runtime`),
+      apiFetch<ProjectSnapshot[]>(`/api/projects/${id}/snapshots`),
+    ]);
+    setManifest(manifestData);
+    setServices(serviceData);
+    setApiRoutes(apiRoutesData);
+    setDatabase(databaseData);
+    setEnvVars(envVarData);
+    setValidationReports(validationData);
+    setRuntime(runtimeData);
+    setSnapshots(snapshotData);
+  };
+
+  const loadPreviewTicket = async () => {
+    if (!id) return;
+    const ticket = await apiFetch<PreviewTicket>(`/api/projects/${id}/preview/ticket`, { method: 'POST' });
+    setPreviewUrl(ticket.url);
+  };
+
   useEffect(() => {
     if (!id) return;
 
@@ -146,8 +296,10 @@ export default function Builder() {
       setProject(projectData);
       setScreens(screenData);
       setPreview(previewData);
+      await loadPreviewTicket();
 
       await loadFiles();
+      await loadProjectStructure();
 
       const sessions = await apiFetch<Session[]>(`/api/projects/${id}/sessions`);
       let sessionId: string;
@@ -228,6 +380,13 @@ export default function Builder() {
   const sendComponentPrompt = (prompt: string) => {
     setChatInput(prompt);
     setSidebarTab('files');
+  };
+
+  const restoreSnapshot = async (snapshotId: string) => {
+    if (!id) return;
+    await apiFetch(`/api/projects/${id}/snapshots/${snapshotId}/restore`, { method: 'POST' });
+    await Promise.all([loadFiles(), loadProjectStructure()]);
+    previewIframeRef.current?.contentWindow?.location.reload();
   };
 
   const handleChatSubmit = async (overrideInput?: string) => {
@@ -315,8 +474,9 @@ export default function Builder() {
             content: parsed.content,
           });
           if (parsed.name === 'write_project_file') {
-            const refreshedFiles = await loadFiles();
-            log.addEntry({
+              const refreshedFiles = await loadFiles();
+              await loadProjectStructure();
+              log.addEntry({
               type: 'tool_result',
               label: 'Builder files refreshed',
               content: JSON.stringify(
@@ -336,6 +496,7 @@ export default function Builder() {
           setStreamingContent('');
           setIsStreaming(false);
           const refreshedFiles = await loadFiles();
+          await loadProjectStructure();
           log.addEntry({
             type: 'done',
             label: 'Builder run completed',
@@ -369,8 +530,6 @@ export default function Builder() {
     }
   };
 
-  const previewUrl = id ? `/api/projects/${id}/preview/serve/index.html` : null;
-
   return (
     <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '260px 1fr 360px', minHeight: 0, overflow: 'hidden' }}>
 
@@ -386,7 +545,7 @@ export default function Builder() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          {(['files', 'screens', 'components'] as SidebarTab[]).map((tab) => (
+          {(['files', 'screens', 'components', 'services', 'api', 'database', 'env', 'validation', 'runtime', 'snapshots'] as SidebarTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSidebarTab(tab)}
@@ -485,6 +644,240 @@ export default function Builder() {
                   <span style={{ fontSize: '14px', width: '18px', textAlign: 'center', flexShrink: 0 }}>{c.icon}</span>
                   <span>{c.label}</span>
                 </button>
+              ))}
+            </div>
+          )}
+
+          {/* SERVICES TAB */}
+          {sidebarTab === 'services' && (
+            <ServicesPanel manifest={manifest} services={services} />
+          )}
+
+          {/* API ROUTES TAB */}
+          {sidebarTab === 'api' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                API routes
+              </div>
+              {apiRoutes.length === 0 && (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                  No API routes yet.
+                </div>
+              )}
+              {apiRoutes.map((route) => {
+                const service = route.service_id ? services.find((item) => item.id === route.service_id) : undefined;
+                return (
+                  <div key={route.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                      <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
+                        {route.method} {route.path}
+                      </div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                        {service?.name ?? 'unbound'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                      {route.handler_path}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* DATABASE TAB */}
+          {sidebarTab === 'database' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                  Schemas
+                </div>
+                {database.schemas.length === 0 && (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                    No database schema yet.
+                  </div>
+                )}
+                {database.schemas.map((schema) => (
+                  <div key={schema.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                      <div style={{ fontWeight: 'var(--weight-medium)', fontSize: 'var(--text-xs)' }}>{schema.name}</div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>{schema.engine}</div>
+                    </div>
+                    <pre style={{ marginTop: 'var(--space-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+                      {JSON.stringify(schema.schema, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                  Migrations
+                </div>
+                {database.migrations.length === 0 && (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                    No migrations yet.
+                  </div>
+                )}
+                {database.migrations.map((migration) => (
+                  <div key={migration.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                      <div style={{ fontWeight: 'var(--weight-medium)', fontSize: 'var(--text-xs)' }}>
+                        {migration.version}. {migration.name}
+                      </div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>{migration.status}</div>
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                      {migration.content.slice(0, 140)}{migration.content.length > 140 ? '…' : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ENV TAB */}
+          {sidebarTab === 'env' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                Environment
+              </div>
+              {envVars.length === 0 && (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                  No env vars yet.
+                </div>
+              )}
+              {envVars.map((envVar) => {
+                const service = envVar.service_id ? services.find((item) => item.id === envVar.service_id) : undefined;
+                return (
+                  <div key={envVar.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                      <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
+                        {envVar.name}
+                      </div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                        {service?.name ?? 'project'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 'var(--space-1)' }}>
+                      {envVar.required ? 'required' : 'optional'}{envVar.secret_ref ? ' · secret ref' : ''}
+                    </div>
+                    {envVar.description && (
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                        {envVar.description}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* VALIDATION TAB */}
+          {sidebarTab === 'validation' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                Validation
+              </div>
+              {validationReports.length === 0 && (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                  No validation reports yet.
+                </div>
+              )}
+              {validationReports.map((report) => (
+                <div key={report.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)' }}>{report.status}</div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                      {new Date(report.created_at).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  {report.log_excerpt && (
+                    <pre style={{ marginTop: 'var(--space-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+                      {report.log_excerpt}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* RUNTIME TAB */}
+          {sidebarTab === 'runtime' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                Runtime
+              </div>
+              {!runtime && (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                  No runtime instance yet.
+                </div>
+              )}
+              {runtime && (
+                <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)' }}>{runtime.status}</div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                      {new Date(runtime.updated_at).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 'var(--space-2)', fontFamily: 'var(--font-mono)' }}>
+                    frontend: {runtime.frontend_url ?? '—'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                    backend: {runtime.backend_url ?? '—'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 'var(--space-2)' }}>
+                    {runtime.backend_url
+                      ? 'Full-stack service runtime'
+                      : 'Static preview fallback'}
+                  </div>
+                  {preview && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                      Preview: {preview.status}{preview.error ? ` · ${preview.error}` : ''}
+                    </div>
+                  )}
+                  {runtime.error && (
+                    <div style={{ fontSize: '10px', color: 'var(--color-error)', marginTop: 'var(--space-2)' }}>{runtime.error}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SNAPSHOTS TAB */}
+          {sidebarTab === 'snapshots' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
+                Snapshots
+              </div>
+              {snapshots.length === 0 && (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
+                  No snapshots yet.
+                </div>
+              )}
+              {snapshots.map((snapshot) => (
+                <div key={snapshot.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)' }}>
+                      {snapshot.label ?? 'Snapshot'}
+                    </div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                      {new Date(snapshot.created_at).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
+                    {snapshot.file_tree.length} files · {Object.keys(snapshot.resource_graph).length} groups
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => void restoreSnapshot(snapshot.id)}
+                    style={{ width: '100%', justifyContent: 'center', marginTop: 'var(--space-2)' }}
+                  >
+                    Restore
+                  </button>
+                </div>
               ))}
             </div>
           )}

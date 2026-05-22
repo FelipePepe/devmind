@@ -27,6 +27,13 @@ import { ProjectRunsRepo } from './db/repos/project-runs.js';
 import { AppResourcesRepo } from './db/repos/app-resources.js';
 import { ProjectFilesRepo } from './db/repos/project-files.js';
 import { ComponentsRepo } from './db/repos/components.js';
+import { ProjectManifestsRepo } from './db/repos/project-manifests.js';
+import { ProjectServicesRepo } from './db/repos/project-services.js';
+import { ProjectApiRoutesRepo } from './db/repos/project-api-routes.js';
+import { ProjectDbSchemasRepo, ProjectDbMigrationsRepo } from './db/repos/project-database.js';
+import { ProjectEnvVarsRepo } from './db/repos/project-env-vars.js';
+import { ProjectValidationReportsRepo, ProjectRuntimeInstancesRepo } from './db/repos/project-validation-runtime.js';
+import { ProjectSnapshotsRepo } from './db/repos/project-snapshots.js';
 
 import { StorageService } from './storage/storage.js';
 import { FlagsService } from './flags/flags.js';
@@ -70,6 +77,15 @@ async function start(): Promise<void> {
   const appResources = new AppResourcesRepo(db);
   const projectFiles = new ProjectFilesRepo(db);
   const components = new ComponentsRepo(db);
+  const projectManifests = new ProjectManifestsRepo(db);
+  const projectServices = new ProjectServicesRepo(db);
+  const projectApiRoutes = new ProjectApiRoutesRepo(db);
+  const projectDbSchemas = new ProjectDbSchemasRepo(db);
+  const projectDbMigrations = new ProjectDbMigrationsRepo(db);
+  const projectEnvVars = new ProjectEnvVarsRepo(db);
+  const projectValidationReports = new ProjectValidationReportsRepo(db);
+  const projectRuntimeInstances = new ProjectRuntimeInstancesRepo(db);
+  const projectSnapshots = new ProjectSnapshotsRepo(db);
 
   settingsRepo.seed('ollama.base_url', config.OLLAMA_BASE_URL, 'Ollama server base URL');
   settingsRepo.seed('ollama.coding_model', config.OLLAMA_CODING_MODEL, 'Model for code generation tasks');
@@ -114,7 +130,27 @@ async function start(): Promise<void> {
   app.route('/', createFlagsRouter(flagsService));
   app.route('/admin', createAdminRouter(users, jobs, settingsRepo));
   app.route('/api/sessions', createSessionsRouter(sessions, messages));
-  app.route('/api/chat', createChatRouter({ sessions, messages, tasks, agentRuns, storage, projects, screens, projectFiles, settings: settingsRepo }));
+  app.route('/api/chat', createChatRouter({
+    sessions,
+    messages,
+    tasks,
+    agentRuns,
+    storage,
+    projects,
+    screens,
+    projectFiles,
+    settings: settingsRepo,
+    projectManifests,
+    projectServices,
+    projectApiRoutes,
+    projectDbSchemas,
+    projectDbMigrations,
+    projectEnvVars,
+    projectValidationReports,
+    projectRuntimeInstances,
+    projectSnapshots,
+    jobs: queue,
+  }));
   app.route('/api/workspace', createWorkspaceRouter());
 
   app.get('/api/ollama/health', authMiddleware, async (c) => {
@@ -125,7 +161,29 @@ async function start(): Promise<void> {
     return c.json({ ok, model: model ?? null, baseUrl });
   });
 
-  app.route('/api', createBuilderRouter(projects, screens, sessions, previews, appResources, projectFiles, projectRuns, components, queue));
+  app.route(
+    '/api',
+    createBuilderRouter(
+      projects,
+      screens,
+      sessions,
+      previews,
+      appResources,
+      projectFiles,
+      projectRuns,
+      components,
+      projectManifests,
+      projectServices,
+      projectApiRoutes,
+      projectDbSchemas,
+      projectDbMigrations,
+      projectEnvVars,
+      projectValidationReports,
+      projectRuntimeInstances,
+      projectSnapshots,
+      queue
+    )
+  );
   app.route('/', createRealtimeRouter(wsManager, push));
 
   const server = serve(
