@@ -76,6 +76,10 @@ pnpm --filter @devmind/frontend dev
 pnpm --filter @devmind/workers dev
 ```
 
+El backend usa el puerto `3001` por defecto. Para desarrollo local puedes
+sobrescribir `PORT` en `.env`; el proxy de Vite usa `VITE_BACKEND_URL` si existe
+o, si no, deriva `http://localhost:$PORT`.
+
 ## Producción
 
 ```bash
