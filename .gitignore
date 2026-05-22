@@ -23,6 +23,10 @@ build/
 *.db
 *.db-shm
 *.db-wal
+data/.xdp-*
+
+# Local agent memory/artifacts
+.engram/
 
 # Logs
 *.log
