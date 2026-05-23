@@ -2,7 +2,7 @@ import { getDb } from '../db.js';
 import type { JobQueueClient } from '../jobs.js';
 import { logger } from '../logger.js';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve, relative } from 'node:path';
+import { dirname, resolve, relative, posix } from 'node:path';
 
 export interface GenerateProjectPayload {
   projectId: string;
@@ -50,6 +50,16 @@ interface ProjectSnapshotRow {
   id: string;
 }
 
+interface ProjectApiRouteRow {
+  id: string;
+  service_id: string | null;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  handler_path: string;
+  request_schema_json: string;
+  response_schema_json: string;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function parseJsonObject(raw: string): JsonObject {
@@ -88,6 +98,10 @@ function isSafeRelativePath(value: string): boolean {
 function joinPath(rootPath: string, fileName: string): string {
   const root = rootPath === '.' ? '' : rootPath.replace(/^\/+|\/+$/g, '');
   return root ? `${root}/${fileName}` : fileName;
+}
+
+function normalizeProjectPath(value: string): string {
+  return value.replace(/^\/+|\/+$/g, '');
 }
 
 function setPreviewStatus(projectId: string, status: 'building' | 'ready' | 'failed', error?: string): void {
@@ -546,9 +560,90 @@ function slugifyFileName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'migration';
 }
 
-function renderHonoBackend(project: ProjectRow): string {
+function getApiRoutes(projectId: string): ProjectApiRouteRow[] {
+  return getDb()
+    .prepare('SELECT id, service_id, method, path, handler_path, request_schema_json, response_schema_json FROM project_api_routes WHERE project_id = ? ORDER BY path, method')
+    .all(projectId) as ProjectApiRouteRow[];
+}
+
+function toIdentifier(value: string, suffix = ''): string {
+  const base = value
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part, index) => {
+      const lower = part.toLowerCase();
+      if (index === 0) return lower;
+      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+    })
+    .join('');
+  const safe = base && /^[a-zA-Z_$]/.test(base) ? base : `route${base}`;
+  return `${safe}${suffix}`;
+}
+
+function routeBelongsToService(route: ProjectApiRouteRow, service: ProjectServiceRow): boolean {
+  if (route.service_id) return route.service_id === service.id;
+  const root = normalizeProjectPath(service.root_path);
+  if (!root) return true;
+  return route.handler_path === root || route.handler_path.startsWith(`${root}/`);
+}
+
+function getRouteImportPath(indexPath: string, handlerPath: string): string {
+  const rel = posix.relative(posix.dirname(indexPath), handlerPath).replace(/\.tsx?$/u, '.js');
+  return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+function getRouteExportName(route: ProjectApiRouteRow): string {
+  return toIdentifier(`${route.method} ${route.path} ${route.id}`, 'Route');
+}
+
+function renderHonoRouteHandler(route: ProjectApiRouteRow, exportName: string): string {
+  const method = route.method.toLowerCase();
+  const schemaSummary = {
+    request: parseJsonObject(route.request_schema_json),
+    response: parseJsonObject(route.response_schema_json),
+  };
+  return `import type { Hono } from 'hono';
+
+const schema = ${JSON.stringify(schemaSummary, null, 2)};
+
+export function ${exportName}(app: Hono): void {
+  app.${method}(${JSON.stringify(route.path)}, async (c) => {
+    const payload = ${route.method === 'GET' || route.method === 'DELETE'
+      ? 'null'
+      : "await c.req.json().catch(() => null)"};
+
+    return c.json({
+      ok: true,
+      route: {
+        method: ${JSON.stringify(route.method)},
+        path: ${JSON.stringify(route.path)}
+      },
+      payload,
+      schema
+    });
+  });
+}
+`;
+}
+
+function renderHonoBackend(project: ProjectRow, service: ProjectServiceRow, routes: ProjectApiRouteRow[]): string {
+  const indexPath = joinPath(service.root_path, 'src/index.ts');
+  const registrations = routes.map((route) => ({
+    importPath: getRouteImportPath(indexPath, route.handler_path),
+    exportName: getRouteExportName(route),
+  }));
+  const imports = registrations
+    .map((registration) => `import { ${registration.exportName} } from ${JSON.stringify(registration.importPath)};`)
+    .join('\n');
+  const registerCalls = registrations
+    .map((registration) => `${registration.exportName}(app);`)
+    .join('\n');
+
   return `import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+${imports ? `\n${imports}\n` : ''}
 
 const app = new Hono();
 
@@ -559,6 +654,7 @@ app.get('/api/hello', (c) => c.json({
   generatedBy: 'DevMind',
 }));
 
+${registerCalls ? `${registerCalls}\n` : ''}
 const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port });
 console.log(\`Generated backend listening on http://localhost:\${port}\`);
@@ -566,8 +662,19 @@ console.log(\`Generated backend listening on http://localhost:\${port}\`);
 }
 
 function ensureBackendServiceFiles(projectId: string, project: ProjectRow, services: ProjectServiceRow[]): void {
+  const apiRoutes = getApiRoutes(projectId);
+  for (const route of apiRoutes) {
+    if (!isSafeRelativePath(route.handler_path)) continue;
+    insertProjectFileIfMissing(
+      projectId,
+      route.handler_path,
+      renderHonoRouteHandler(route, getRouteExportName(route))
+    );
+  }
+
   for (const service of services.filter((item) => item.kind === 'backend')) {
     if (service.runtime !== 'hono-node') continue;
+    const serviceRoutes = apiRoutes.filter((route) => routeBelongsToService(route, service));
     const root = service.root_path;
     insertProjectFileIfMissing(projectId, joinPath(root, 'package.json'), `${JSON.stringify({
       name: `${project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-backend`,
@@ -599,7 +706,7 @@ function ensureBackendServiceFiles(projectId: string, project: ProjectRow, servi
       },
       include: ['src/**/*.ts'],
     }, null, 2)}\n`);
-    insertProjectFileIfMissing(projectId, joinPath(root, 'src/index.ts'), renderHonoBackend(project));
+    insertProjectFileIfMissing(projectId, joinPath(root, 'src/index.ts'), renderHonoBackend(project, service, serviceRoutes));
   }
 }
 

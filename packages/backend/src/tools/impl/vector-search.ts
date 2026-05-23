@@ -1,9 +1,6 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
-import hnswlib from 'hnswlib-node';
-type HierarchicalNSW = InstanceType<typeof hnswlib.HierarchicalNSW>;
-const { HierarchicalNSW } = hnswlib;
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { ollamaClient } from '../../ollama/client.js';
@@ -30,11 +27,30 @@ interface ChunkRow {
   text: string;
 }
 
+type HnswIndex = {
+  readIndexSync(path: string): void;
+  getCurrentCount(): number;
+  searchKnn(query: number[], k: number): { neighbors: number[]; distances: number[] };
+};
+
+type HnswConstructor = new (space: 'cosine', dimensions: number) => HnswIndex;
+
 // Lazy-initialized read-only handles shared across invocations
 let _db: Database.Database | null = null;
-let _hnsw: HierarchicalNSW | null = null;
+let _hnsw: HnswIndex | null = null;
 
-function getStore(): { db: Database.Database; hnsw: HierarchicalNSW } | { error: string } {
+async function loadHnswConstructor(): Promise<HnswConstructor> {
+  // hnswlib-node is a native module; load it only when vector search is used so
+  // backend startup and non-vector smoke tests do not depend on native addon init.
+  const mod = await import('hnswlib-node');
+  const candidate = mod.default as { HierarchicalNSW?: HnswConstructor };
+  if (!candidate.HierarchicalNSW) {
+    throw new Error('hnswlib-node HierarchicalNSW export not found');
+  }
+  return candidate.HierarchicalNSW;
+}
+
+async function getStore(): Promise<{ db: Database.Database; hnsw: HnswIndex } | { error: string }> {
   const dbPath = join(config.VECTOR_DB_PATH, 'chunks.db');
   const hnswPath = join(config.VECTOR_DB_PATH, 'index.hnsw');
 
@@ -46,6 +62,7 @@ function getStore(): { db: Database.Database; hnsw: HierarchicalNSW } | { error:
     _db = new Database(dbPath, { readonly: true });
   }
   if (!_hnsw) {
+    const HierarchicalNSW = await loadHnswConstructor();
     _hnsw = new HierarchicalNSW('cosine', 768);
     _hnsw.readIndexSync(hnswPath);
   }
@@ -79,7 +96,7 @@ export const vectorSearchTool: ToolDef = {
     }
     const { query, topK } = parsed.data;
 
-    const store = getStore();
+    const store = await getStore();
     if ('error' in store) {
       return JSON.stringify({ error: store.error });
     }
