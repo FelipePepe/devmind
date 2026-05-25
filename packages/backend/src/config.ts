@@ -9,7 +9,7 @@ import { z } from 'zod';
 // Run: infisical run -- node dist/index.js
 
 const ConfigSchema = z.object({
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
   // Ollama
@@ -63,4 +63,9 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export const config = ConfigSchema.parse(process.env);
+export let config: Config = ConfigSchema.parse(process.env);
+
+export function parseConfig(): Config {
+  config = ConfigSchema.parse(process.env);
+  return config;
+}

@@ -1,8 +1,11 @@
 import { existsSync, unlinkSync } from 'node:fs';
-import { HierarchicalNSW } from 'hnswlib-node';
+import hnswlib from 'hnswlib-node';
 import Database from 'better-sqlite3';
 import type { Chunk } from './chunker.js';
 import { logger } from '../logger.js';
+
+const { HierarchicalNSW } = hnswlib;
+type HierarchicalNSWIndex = InstanceType<typeof HierarchicalNSW>;
 
 const HNSW_DIMENSIONS = 768;
 const HNSW_MAX_ELEMENTS = 100_000;
@@ -23,7 +26,7 @@ interface ChunkRow {
 
 export class VectorIndexStore {
   private db: Database.Database;
-  private hnsw: HierarchicalNSW;
+  private hnsw: HierarchicalNSWIndex;
   private initialized = false;
   private countChunksStmt: Database.Statement | undefined;
   private _forceRebuild = false;

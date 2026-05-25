@@ -5,6 +5,7 @@ project: devmind
 context: |
   Tech stack: Hono + Node.js (TypeScript strict), React, pnpm monorepo
   Architecture: Backend (packages/backend), Frontend (packages/frontend), Workers sidecar (packages/workers)
+  Package manager: pnpm only — never npm
   LLM: Ollama local (qwen2.5-coder, qwen3, nomic-embed-text) via LangGraph
   Persistence: SQLite (better-sqlite3) + hnswlib-node vector store
   Auth: Username/password + TOTP MFA, JWT sessions
@@ -16,6 +17,11 @@ context: |
   Network: .casa intranet only, secrets via Infisical (devmind-pxgt)
 
 strict_tdd: false
+
+package_manager:
+  name: pnpm
+  version: "10.0.0"
+  policy: "never npm"
 
 testing:
   strict_tdd: false
@@ -70,11 +76,13 @@ rules:
     - Follow existing TypeScript strict conventions (exactOptionalPropertyTypes, noUncheckedIndexedAccess)
     - Use Zod for all input validation
     - Use Pino for structured logging
+    - Use pnpm only — never npm or npx in this project
     tdd: false
     test_command: ""
   verify:
     test_command: ""
     build_command: "pnpm -r build"
+    package_manager_note: "Prefer `pnpm exec` and `pnpm dlx`; never use `npm` or `npx`"
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas (large removals)

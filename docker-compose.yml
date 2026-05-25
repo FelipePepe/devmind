@@ -1,0 +1,97 @@
+services:
+  init:
+    image: node:22-alpine
+    container_name: devmind-init
+    working_dir: /app
+    command: sh -c "corepack enable && corepack prepare pnpm@10.0.0 --activate && pnpm install"
+    volumes:
+      - .:/app
+      - devmind-node-modules:/app/node_modules
+      - /mnt/nas/sources/devmind/data:/app/data
+      - devmind-workspace:/app/workspace
+    env_file:
+      - .env
+    networks:
+      - devmind-net
+    restart: 'no'
+
+  backend:
+    image: node:22-alpine
+    container_name: devmind-backend
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "pnpm --filter @devmind/backend dev"
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /mnt/nas/sources/devmind/data:/app/data
+      - devmind-workspace:/app/workspace
+      - devmind-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+    env_file:
+      - .env
+    networks:
+      - devmind-net
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  workers:
+    image: node:22-alpine
+    container_name: devmind-workers
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "pnpm --filter @devmind/workers dev"
+    volumes:
+      - .:/app
+      - /mnt/nas/sources/devmind/data:/app/data
+      - devmind-workspace:/app/workspace
+      - devmind-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - .env
+    networks:
+      - devmind-net
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+
+  frontend:
+    image: node:22-alpine
+    container_name: devmind-frontend
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "pnpm --filter @devmind/frontend dev --host 0.0.0.0"
+    ports:
+      - "5001:5173"
+    volumes:
+      - .:/app
+      - devmind-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_BACKEND_URL=http://backend:3001
+    env_file:
+      - .env
+    networks:
+      - devmind-net
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+
+networks:
+  devmind-net:
+    driver: bridge
+
+volumes:
+  devmind-workspace:
+    driver: local
+  devmind-node-modules:
+    driver: local

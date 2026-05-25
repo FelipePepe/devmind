@@ -15,6 +15,19 @@ import type { ProjectsRepo } from '../db/repos/projects.js';
 import type { ScreensRepo } from '../db/repos/screens.js';
 import type { ProjectFilesRepo } from '../db/repos/project-files.js';
 import type { SettingsRepo } from '../db/repos/settings.js';
+import type { ProjectManifestsRepo, ProjectManifestView } from '../db/repos/project-manifests.js';
+import type { ProjectServicesRepo, ProjectServiceView } from '../db/repos/project-services.js';
+import type { ProjectApiRoutesRepo, ProjectApiRouteView } from '../db/repos/project-api-routes.js';
+import type { ProjectDbSchemasRepo, ProjectDbMigrationsRepo, ProjectDbSchemaView, ProjectDbMigration } from '../db/repos/project-database.js';
+import type { ProjectEnvVarsRepo, ProjectEnvVarView } from '../db/repos/project-env-vars.js';
+import type {
+  ProjectValidationReportsRepo,
+  ProjectRuntimeInstancesRepo,
+  ProjectValidationReportView,
+  ProjectRuntimeInstanceView,
+} from '../db/repos/project-validation-runtime.js';
+import type { JobQueueClient } from '../workers/queue.js';
+import type { ProjectSnapshotsRepo, ProjectSnapshotView } from '../db/repos/project-snapshots.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
 
@@ -24,10 +37,20 @@ interface ProjectContext {
   description: string | null;
   screens: Array<{ name: string; path: string }>;
   files: Array<{ path: string; language: string }>;
+  manifest?: ProjectManifestView;
+  services: ProjectServiceView[];
+  apiRoutes: ProjectApiRouteView[];
+  dbSchemas: ProjectDbSchemaView[];
+  dbMigrations: ProjectDbMigration[];
+  envVars: ProjectEnvVarView[];
+  validationReports: ProjectValidationReportView[];
+  runtime?: ProjectRuntimeInstanceView;
+  snapshots: ProjectSnapshotView[];
 }
 
 function buildSystemPrompt(workspaceRoot: string, project?: ProjectContext): string {
   const date = new Date().toISOString().split('T')[0] ?? new Date().toISOString();
+  const isEmptyProject = project ? project.files.length === 0 && project.screens.length === 0 : false;
   let prompt = `You are DevMind, a local AI full-stack development assistant. You help users build web applications by generating code, writing files, and managing project structure.
 
 Workspace: ${workspaceRoot}
@@ -35,7 +58,7 @@ Date: ${date}`;
 
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
-    if (project.description) prompt += `\n${project.description}`;
+    if (project.description && !isEmptyProject) prompt += `\n${project.description}`;
     if (project.screens.length > 0) {
       prompt += `\n\nScreens:\n${project.screens.map((s) => `- ${s.name} (${s.path})`).join('\n')}`;
     }
@@ -43,6 +66,51 @@ Date: ${date}`;
       prompt += `\n\nExisting project files:\n${project.files.map((f) => `- ${f.path} (${f.language})`).join('\n')}`;
     } else {
       prompt += `\n\nNo files in project yet.`;
+    }
+    if (project.manifest) {
+      prompt += `\n\nProject manifest:\n${JSON.stringify({
+        appType: project.manifest.app_type,
+        stack: project.manifest.stack,
+        commands: project.manifest.commands,
+        entrypoints: project.manifest.entrypoints,
+      }, null, 2)}`;
+    } else {
+      prompt += `\n\nNo project manifest yet.`;
+    }
+    if (project.services.length > 0) {
+      prompt += `\n\nProject services:\n${project.services.map((s) => `- ${s.kind}: ${s.name} (${s.runtime}, ${s.root_path}, status ${s.status})`).join('\n')}`;
+    } else {
+      prompt += `\n\nNo project services yet.`;
+    }
+    if (project.apiRoutes.length > 0) {
+      prompt += `\n\nProject API routes:\n${project.apiRoutes.map((route) => `- ${route.method} ${route.path} -> ${route.handler_path}`).join('\n')}`;
+    } else {
+      prompt += `\n\nNo project API routes yet.`;
+    }
+    if (project.dbSchemas.length > 0) {
+      prompt += `\n\nProject database schemas:\n${project.dbSchemas.map((schema) => `- ${schema.name} (${schema.engine})`).join('\n')}`;
+    } else {
+      prompt += `\n\nNo project database schema yet.`;
+    }
+    if (project.envVars.length > 0) {
+      prompt += `\n\nProject env vars:\n${project.envVars.map((envVar) => `- ${envVar.name}${envVar.required ? ' (required)' : ''}${envVar.secret_ref ? ' secret_ref' : ''}`).join('\n')}`;
+    } else {
+      prompt += `\n\nNo project env vars yet.`;
+    }
+    if (project.validationReports.length > 0) {
+      const latest = project.validationReports[0];
+      if (latest) prompt += `\n\nLatest validation report: ${latest.status}`;
+    } else {
+      prompt += `\n\nNo validation reports yet.`;
+    }
+    if (project.runtime) {
+      prompt += `\n\nRuntime status: ${project.runtime.status} frontend=${project.runtime.frontend_url ?? 'none'} backend=${project.runtime.backend_url ?? 'none'}`;
+    } else {
+      prompt += `\n\nNo runtime instance yet.`;
+    }
+    prompt += `\n\nProject snapshots: ${project.snapshots.length}`;
+    if (isEmptyProject) {
+      prompt += `\n\nThis project is currently empty. Ignore any stale prior intent associated with this project and treat the current user prompt as the sole source of truth for what to build next.`;
     }
   }
 
@@ -52,16 +120,42 @@ Date: ${date}`;
 You are a full-stack app builder. When asked to build or modify an app, you MUST use write_project_file to generate actual code files.
 
 ## App Generation Rules
-- Generate self-contained HTML apps (index.html with inline CSS and JS) unless the user asks for a specific framework
+- Generate modular apps by default, not a single monolithic file
+- Unless the user asks for a specific framework, generate a static modular web app using multiple files
+- The default minimum structure is:
+  - index.html
+  - styles.css
+  - app.js
+- For non-trivial apps, split code into additional files such as:
+  - components/*.js
+  - pages/*.js
+  - utils/*.js
+  - data/*.js
 - The generated app is served directly in the browser preview — it must work as static HTML/CSS/JS
-- Always create at least index.html as the entry point
-- Use modern, clean design with inline styles — avoid external CDN dependencies when possible
+- Always create at least index.html as the entry point and link the other generated files correctly
+- Prefer separate CSS and JS files over inline <style> and <script> blocks unless the user explicitly asks for a single-file artifact
+- Use modern, clean design — avoid external CDN dependencies when possible
 - When asked to "build" or "generate" or "create" an app, always call write_project_file immediately
+- If the request is generic (for example: "build the app", "create the app", "make the app"), you must still build immediately and choose a sensible default product direction instead of asking follow-up questions
+- Do NOT answer with a plan first when the user is asking to build the app
+- Do NOT explore the workspace or ask for more context first unless the user explicitly requests exploration
+- Do NOT ask the user what they want to build if they have already asked you to build the app
+- Do NOT reply with readiness/help text; your response must be implementation work via write_project_file
+- For a new project, your first actions should create the modular file structure immediately, starting with index.html and then the linked CSS/JS files
 
 ## Available Tools
 - write_project_file: Write/update a file in the project (MAIN tool for code generation)
 - read_project_file: Read an existing project file
 - list_project_files: List all project files
+- read_project_manifest: Read the structured full-stack project manifest
+- update_project_manifest: Create or update the structured full-stack project manifest
+- create_project_service: Create a frontend, backend, or worker service owned by the project
+- upsert_api_route: Create/update a structured API route and handler path
+- upsert_database_schema: Create/update a generated database schema
+- create_database_migration: Create a generated database migration
+- upsert_env_var: Create/update generated app environment variable requirements without storing raw secrets
+- request_project_validation: Queue validation for the active project
+- create_project_snapshot: Capture current manifest, file tree, and resource graph metadata
 - file_read: Read workspace files
 - file_list: List workspace directories
 - search_code: Search code with regex
@@ -71,7 +165,10 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 ## Guidelines
 - After writing files, tell the user what was created and that the preview is ready
 - Be concise. Generate code immediately without asking for confirmation
-- For multi-page apps, generate all HTML files and link them together`;
+- For multi-page apps, generate all HTML files and link them together
+- If the project has no files yet and the user asks to build something, create the first working version immediately
+- If the current prompt is generic, choose a polished starter app and implement it immediately
+- Default to maintainable modular code organization even for small apps`;
 
   return prompt;
 }
@@ -94,6 +191,16 @@ export interface ChatRouterDeps {
   screens: ScreensRepo;
   projectFiles: ProjectFilesRepo;
   settings: SettingsRepo;
+  projectManifests: ProjectManifestsRepo;
+  projectServices: ProjectServicesRepo;
+  projectApiRoutes: ProjectApiRoutesRepo;
+  projectDbSchemas: ProjectDbSchemasRepo;
+  projectDbMigrations: ProjectDbMigrationsRepo;
+  projectEnvVars: ProjectEnvVarsRepo;
+  projectValidationReports: ProjectValidationReportsRepo;
+  projectRuntimeInstances: ProjectRuntimeInstancesRepo;
+  projectSnapshots: ProjectSnapshotsRepo;
+  jobs: JobQueueClient;
 }
 
 export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
@@ -126,18 +233,38 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
       if (!project) return c.json({ error: 'Project not found' }, 404);
       const projectScreens = deps.screens.findByProject(projectId);
       const projectFiles = deps.projectFiles.findByProject(projectId);
+      const manifest = deps.projectManifests.findByProject(projectId);
+      const services = deps.projectServices.findByProject(projectId);
+      const apiRoutes = deps.projectApiRoutes.findByProject(projectId);
+      const dbSchemas = deps.projectDbSchemas.findByProject(projectId);
+      const dbMigrations = deps.projectDbMigrations.findByProject(projectId);
+      const envVars = deps.projectEnvVars.findByProject(projectId);
+      const validationReports = deps.projectValidationReports.findByProject(projectId, 5);
+      const runtime = deps.projectRuntimeInstances.findByProject(projectId);
+      const snapshots = deps.projectSnapshots.findByProject(projectId, 5);
       projectCtx = {
         id: projectId,
         name: project.name,
         description: project.description,
         screens: projectScreens.map((s) => ({ name: s.name, path: s.path })),
         files: projectFiles.map((f) => ({ path: f.path, language: f.language })),
+        ...(manifest ? { manifest } : {}),
+        services,
+        apiRoutes,
+        dbSchemas,
+        dbMigrations,
+        envVars,
+        validationReports,
+        ...(runtime ? { runtime } : {}),
+        snapshots,
       };
     }
 
     const userMsg = deps.messages.create(sessionId, 'user', content);
 
-    const history = deps.messages.findBySession(sessionId, HISTORY_LIMIT);
+    const history = projectId
+      ? []
+      : deps.messages.findBySession(sessionId, HISTORY_LIMIT);
     const ollamaMessages: OllamaMessage[] = [
       { role: 'system', content: buildSystemPrompt(config.WORKSPACE_ROOT, projectCtx) },
       ...history.map((m) => ({
@@ -167,8 +294,17 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
           tasks: deps.tasks,
           storage: deps.storage,
           projectFiles: deps.projectFiles,
+          projectManifests: deps.projectManifests,
+          projectServices: deps.projectServices,
+          projectApiRoutes: deps.projectApiRoutes,
+          projectDbSchemas: deps.projectDbSchemas,
+          projectDbMigrations: deps.projectDbMigrations,
+          projectEnvVars: deps.projectEnvVars,
+          projectSnapshots: deps.projectSnapshots,
+          jobs: deps.jobs,
         },
-        userId
+        userId,
+        { projectBuilderOnly: projectId !== undefined }
       );
 
       await runAgentLoop({

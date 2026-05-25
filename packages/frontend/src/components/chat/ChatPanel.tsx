@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react';
 import { MessageList } from './MessageList.js';
 import { InputBar } from './InputBar.js';
 import { AgentConsole } from './AgentConsole.js';
-import type { ChatMessage } from '../../hooks/useChatStore.js';
-import type { ToolEvent } from '../../hooks/useChatStore.js';
+import type { ChatMessage, ToolEvent } from '../../types/index.js';
 
 interface ChatPanelProps {
   messages: ChatMessage[];

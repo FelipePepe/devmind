@@ -5,6 +5,7 @@ import { indexCodebase, type IndexCodebasePayload } from './handlers/index-codeb
 import { archiveSessions } from './handlers/archive-sessions.js';
 import { generateProject, type GenerateProjectPayload } from './handlers/generate-project.js';
 import { rebuildPreview, type RebuildPreviewPayload } from './handlers/rebuild-preview.js';
+import { validateProject, type ValidateProjectPayload } from './handlers/validate-project.js';
 import type { Job } from './jobs.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -44,6 +45,11 @@ async function dispatch(job: Job): Promise<void> {
         logger.info({ jobId: job.id }, 'Job: rebuildPreview starting');
         await rebuildPreview(JSON.parse(job.payload) as RebuildPreviewPayload, jobs, job.id);
         logger.info({ jobId: job.id }, 'Job: rebuildPreview completed');
+        break;
+      case 'validateProject':
+        logger.info({ jobId: job.id }, 'Job: validateProject starting');
+        await validateProject(JSON.parse(job.payload) as ValidateProjectPayload, jobs, job.id);
+        logger.info({ jobId: job.id }, 'Job: validateProject completed');
         break;
       default:
         logger.warn({ type: job.type }, 'Unknown job type');

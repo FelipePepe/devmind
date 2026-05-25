@@ -17,7 +17,11 @@ export function getDb(): Database.Database {
   _db = new Database(config.DB_PATH);
   _db.pragma('foreign_keys = ON');
   _db.pragma('busy_timeout = 5000');
-  _db.pragma('journal_mode = WAL');
+  try {
+    _db.pragma('journal_mode = WAL');
+  } catch (err) {
+    logger.warn({ err, dbPath: config.DB_PATH }, 'SQLite WAL unavailable, continuing with default journal mode');
+  }
 
   runMigrations(_db);
   return _db;

@@ -1,16 +1,26 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    proxy: {
-      '/api': 'http://localhost:3001',
-      '/auth': 'http://localhost:3001',
-      '/admin': 'http://localhost:3001',
-      '/ws': { target: 'ws://localhost:3001', ws: true },
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, repoRoot, '');
+  const backendPort = env['PORT'] || '3001';
+  const backendUrl = env['VITE_BACKEND_URL'] || `http://localhost:${backendPort}`;
+  const backendWsUrl = backendUrl.replace(/^http/, 'ws');
+
+  return {
+    plugins: [react()],
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      proxy: {
+        '/api': backendUrl,
+        '/auth': backendUrl,
+        '/admin': backendUrl,
+        '/ws': { target: backendWsUrl, ws: true },
+      },
     },
-  },
+  };
 });

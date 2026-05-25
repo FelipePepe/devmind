@@ -76,6 +76,10 @@ pnpm --filter @devmind/frontend dev
 pnpm --filter @devmind/workers dev
 ```
 
+El backend usa el puerto `3001` por defecto. Para desarrollo local puedes
+sobrescribir `PORT` en `.env`; el proxy de Vite usa `VITE_BACKEND_URL` si existe
+o, si no, deriva `http://localhost:$PORT`.
+
 ## Producción
 
 ```bash
@@ -125,10 +129,11 @@ Ver [`DESIGN.md`](./DESIGN.md) — fuente de verdad del sistema de tokens visual
 | Runtime de agente + tools | ✅ | Ollama, loop de tools, persistencia |
 | Frontend Zustand stores | ✅ | auth, chat, session stores |
 | **Builder — proyectos y screens** | ✅ | CRUD completo, frontend `/projects` + `/builder/:id` |
-| **Builder — preview runtime** | ✅ (skeleton) | Estado de preview real; workers pendientes de runtime real |
+| **Builder — preview runtime** | ✅ | Preview estático con tickets firmados, estado runtime full-stack y fallback explícito |
 | **Builder — app resources** | ✅ | Collections, storage, channels, jobs, auth config por proyecto |
+| **Builder — full-stack generator** | ✅ | Manifest, servicios, API routes, BBDD SQLite, env vars, validación y snapshots |
 | Indexación semántica (HNSW) | ✅ | Embeddings Ollama, búsqueda vectorial |
-| Workers — jobs reales de generación | 🔲 | Skeletons listos; implementación real pendiente |
+| Workers — jobs reales de generación | ✅ | Generación manifest-aware, materialización en workspace, validación y rebuild preview |
 | Seguridad y gobierno de tools | 🔲 | |
 | Tests, CI, release | 🔲 | |
 

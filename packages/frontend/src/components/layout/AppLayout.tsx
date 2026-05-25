@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { type ReactNode } from 'react';
 import { TopBar } from './TopBar.js';
+import { LogPanel } from './LogPanel.js';
 import { useAuthStore } from '../../stores/auth.js';
+import { useLogStore } from '../../stores/log.js';
 import Chat from '../../pages/Chat.js';
 import Projects from '../../pages/Projects.js';
 import Builder from '../../pages/Builder.js';
@@ -18,8 +20,16 @@ function AdminRoute({ children }: { children: ReactNode }) {
 }
 
 export default function AppLayout() {
+  const isLogOpen = useLogStore((s) => s.isOpen);
+  const logHeight = useLogStore((s) => s.height);
+
   return (
-    <div className="app-layout">
+    <div
+      className="app-layout"
+      style={{
+        gridTemplateRows: isLogOpen ? `var(--topbar-height) 1fr ${logHeight}px` : 'var(--topbar-height) 1fr',
+      }}
+    >
       <TopBar />
       <Routes>
         <Route path="/" element={<Navigate to="/projects" replace />} />
@@ -32,6 +42,7 @@ export default function AppLayout() {
         <Route path="/admin/ollama" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><OllamaSettings /></div></AdminRoute>} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
+      <LogPanel />
     </div>
   );
 }
