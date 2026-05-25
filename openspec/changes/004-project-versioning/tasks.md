@@ -1,9 +1,11 @@
 # Tasks: 004 — Project Versioning
 
-> **Backend status (2026-05-25)**: Phases 0–3, 5, 6 (except 6.5), 7 and 8 are
-> implemented and the full monorepo builds clean (`pnpm -r build`). Phase 4
-> (agent-loop auto-capture) and Phases 9–11 (frontend timeline / diff modal /
-> per-message revert UI) are still open. Verification (Phase 12) is pending and
+> **Status (2026-05-25)**: All phases except verification are done. Backend
+> phases 0–8 shipped in PR #5 (merged to develop). Phase 4 (agent-loop
+> auto-capture), Phase 6.5 (admin compact), Phase 11.1 (messages route
+> extension) and Phases 9–11 (frontend timeline / diff modal / per-message
+> revert) shipped on `feature/004-phase-4-auto-capture`. The full monorepo
+> builds clean (`pnpm -r build`). Phase 12 verification is still pending and
 > must run against a real DevMind DB before this change is archived.
 
 ## Phase 0 — SDD Baseline [infra]
@@ -42,37 +44,37 @@
 - [x] 3.2 [backend] Returns `text/plain; charset=utf-8` (language-aware Content-Type deferred to 005)
 - [x] 3.3 [backend] Cap response size at 10 MB; 413 otherwise
 
-## Phase 4 — Auto-Capture in Agent Loop [backend]  *(deferred)*
+## Phase 4 — Auto-Capture in Agent Loop [backend]
 
-- [ ] 4.1 [backend] Add `result.mutated` signal to `runAgentLoop` by hashing manifest before/after
-- [ ] 4.2 [backend] Wrap `runAgentLoop` with pre-capture when `versioning.auto_capture` is ON
-- [ ] 4.3 [backend] Add post-capture on `result.mutated === true`, linked to closing assistant message and agent run
-- [ ] 4.4 [backend] Ensure pre-capture failure does NOT abort the agent run
-- [ ] 4.5 [backend] Ensure post-capture failure does NOT lose the agent run result
+- [x] 4.1 [backend] Mutation signal via `snapshotStateHash(snapshot)` (SHA-256 of manifest + files + resources). Cheaper than re-reading tables — uses the snapshot we already captured.
+- [x] 4.2 [backend] `chat/routes.ts` wraps `runAgentLoop` with pre-capture `(trigger: 'auto-pre-agent', agentRunId)` when `versioning.auto_capture` is ON and the session belongs to a project.
+- [x] 4.3 [backend] Post-capture `(trigger: 'auto-post-agent', agentRunId, messageId, parentSnapshotId: preId)`. If post hash equals pre hash, `discard(post.id)` keeps the timeline clean.
+- [x] 4.4 [backend] Pre-capture errors are caught and logged; agent run proceeds normally.
+- [x] 4.5 [backend] Post-capture errors are caught and logged after `onDone` has already streamed the assistant message; the result is never lost.
 
 ## Phase 5 — Diff Endpoint [backend]
 
 - [x] 5.1 [backend] `GET /api/projects/:id/snapshots/:a/diff/:b`
 - [x] 5.2 [backend] `diffManifests` returns `{ added, removed, modified }`
 - [x] 5.3 [backend] `diffResourceGraph` returns per-resource-type added/removed for services, apiRoutes, dbSchemas, dbMigrations, appResources, envVars
-- [ ] 5.4 [backend] Add Zod schema for diff response and shared TS type (the inline type is exported as `SnapshotDiff`; a runtime Zod schema is not strictly needed because the route does not parse a body; if a stricter contract is wanted later, add one)
-- [x] 5.5 [backend] Validate `a` and `b` belong to the same project (404 otherwise; spec called for 403 but 404 fits the "do not leak existence" pattern used elsewhere in the router)
+- [ ] 5.4 [backend] Add Zod schema for diff response and shared TS type (`SnapshotDiff` is exported; runtime Zod schema not needed because the route does not parse a body)
+- [x] 5.5 [backend] Validate `a` and `b` belong to the same project (404 — same "do not leak existence" pattern used elsewhere)
 - [x] 5.6 [backend] Legacy snapshots: `manifestFromSnapshot` hashes `file_tree` on the fly
 
 ## Phase 6 — Retention and Pinning [backend]
 
 - [x] 6.1 [backend] `ProjectSnapshotsRepo.prune(projectId)` evicts ephemeral snapshots beyond `snapshot_retention_keep`, skips pinned, decrements blob refs and deletes orphan blobs in one transaction
-- [ ] 6.2 [backend] Call `prune` after each `auto-post-agent` capture *(blocked on Phase 4)*
+- [x] 6.2 [backend] `chat/routes.ts` calls `prune` after each mutating `auto-post-agent` capture; errors are logged and ignored.
 - [x] 6.3 [backend] `PATCH /api/projects/:id/snapshots/:snapshotId` accepts `{ label?, retention? }`
-- [x] 6.4 [backend] `PATCH /api/projects/:id/snapshot-retention` accepts `{ snapshot_retention_keep }` (separate path from `PATCH /projects/:id` to avoid colliding with the existing name/description update endpoint)
-- [ ] 6.5 [backend] Admin endpoint `POST /api/admin/snapshots/compact` *(not implemented; `ProjectSnapshotBlobsRepo.deleteOrphans` is reachable from `prune` but no admin-facing route yet)*
+- [x] 6.4 [backend] `PATCH /api/projects/:id/snapshot-retention` accepts `{ snapshot_retention_keep }`
+- [x] 6.5 [backend] `POST /admin/snapshots/compact` runs `compactBlobs()`: resets ref_count to 0 and re-increments from live manifests, then deletes orphans. Recovers storage if refs drift.
 
 ## Phase 7 — Branch-Root Restore [backend]
 
 - [x] 7.1 [backend] `POST /api/projects/:id/snapshots/:snapshotId/restore` requires `{ confirm: true }`, returns 400 otherwise
 - [x] 7.2 [backend] After successful rehydrate, `restore()` inserts a `branch-root` snapshot with `parent_snapshot_id = restored.id`
-- [x] 7.3 [backend] Response shape includes `branch_root_id`
-- [ ] 7.4 [backend] Update existing UI restore call to send `confirm: true` *(frontend work; see Phase 9)*
+- [x] 7.3 [backend] Response includes `branch_root_id`
+- [x] 7.4 [backend] Frontend restore call now sends `{ confirm: true }` from the diff modal (Phase 10.5)
 
 ## Phase 8 — Timeline Endpoint [backend]
 
@@ -81,33 +83,33 @@
 - [x] 8.3 [backend] `tip_id` returned explicitly
 - [ ] 8.4 [backend] Cache-invalidation guidance in route comments *(left for when caching is actually introduced)*
 
-## Phase 9 — Frontend Timeline UI [frontend]  *(deferred to a follow-up session)*
+## Phase 9 — Frontend Timeline UI [frontend]
 
-- [ ] 9.1 [frontend] Add `ProjectSnapshotsTimeline` type in `types/index.ts`
-- [ ] 9.2 [frontend] Replace snapshots sidebar tab content with a tree view (trigger icons, labels, timestamps)
-- [ ] 9.3 [frontend] Inline label edit on click
-- [ ] 9.4 [frontend] Pin/unpin toggle per snapshot
-- [ ] 9.5 [frontend] Mark current tip visually (`● now`)
-- [ ] 9.6 [frontend] Restore opens the diff modal (Phase 10) instead of immediately restoring
+- [x] 9.1 [frontend] `ProjectSnapshotsTimeline`, `TimelineNode`, `SnapshotTrigger`, `SnapshotRetention` types in `types/index.ts`
+- [x] 9.2 [frontend] `SnapshotsTimeline` component replaces the flat sidebar list with an indented tree view, trigger icons (◆ ◐ ● ★ ↳), labels and timestamps
+- [x] 9.3 [frontend] Inline label edit: click label → input → Enter/blur saves via PATCH; Escape cancels
+- [x] 9.4 [frontend] Pin/unpin toggle: 📌 when pinned, 📍 when ephemeral; click toggles retention via PATCH
+- [x] 9.5 [frontend] Current tip is highlighted with the accent border and a `● now` chip
+- [x] 9.6 [frontend] Restore action opens the diff modal instead of immediately restoring (and is hidden on the tip itself)
 
-## Phase 10 — Frontend Diff Modal [frontend]  *(deferred)*
+## Phase 10 — Frontend Diff Modal [frontend]
 
-- [ ] 10.1 [frontend] `SnapshotDiffModal` fetching `GET /snapshots/:a/diff/:b`
-- [ ] 10.2 [frontend] Summary counts and resource changes
-- [ ] 10.3 [frontend] Expandable per-file inline diff (npm `diff`); blob content lazy-fetched via `GET /snapshot-blobs/:hash`
-- [ ] 10.4 [frontend] Button text `Restore (creates new branch)`
-- [ ] 10.5 [frontend] On confirmation, POST restore with `{ confirm: true }`; reload project state and timeline
+- [x] 10.1 [frontend] `SnapshotDiffModal` fetches `GET /snapshots/:a/diff/:b`
+- [x] 10.2 [frontend] Summary counters (added/removed/modified) + per-file lists + per-resource-type added/removed summary
+- [x] 10.3 [frontend] Expandable per-file inline diff using an in-component LCS line-diff implementation (no npm dep). Blob content is lazy-fetched via `GET /snapshot-blobs/:hash` only when the user expands a file.
+- [x] 10.4 [frontend] Confirmation button text: `Restore (creates new branch)`; Cancel leaves state unchanged
+- [x] 10.5 [frontend] On confirm, POST restore with `{ confirm: true }`, then reload files and timeline
 
 ## Phase 11 — Per-Message Revert [frontend] [backend]
 
-- [ ] 11.1 [backend] Extend `GET /api/sessions/:id/messages` with `linked_snapshot_id` *(backend has `findByMessageId`; the messages route still needs to include the field)*
-- [ ] 11.2 [frontend] Hover-revealed `⟲ revert to here` button on assistant messages with `linked_snapshot_id`
-- [ ] 11.3 [frontend] Open `SnapshotDiffModal` preloaded with current tip vs. linked snapshot
-- [ ] 11.4 [frontend] No revert affordance on messages without a linked snapshot
+- [x] 11.1 [backend] `findBySession` now LEFT JOINs `project_snapshots` and returns `linked_snapshot_id` per message
+- [x] 11.2 [frontend] Assistant messages with `linked_snapshot_id` render a `⟲ revert to here` button that becomes visible on hover (`.message-revertable:hover .revert-button`)
+- [x] 11.3 [frontend] Clicking opens `SnapshotDiffModal` pre-loaded with `from = current tip`, `to = linked snapshot`
+- [x] 11.4 [frontend] No revert affordance shows on messages without `linked_snapshot_id` or in chats without a project
 
 ## Phase 12 — Verification [infra]
 
-- [ ] 12.1 [infra] Manual: create a project, run 5 prompts with `versioning.auto_capture = ON`, verify 10 snapshots in timeline
+- [ ] 12.1 [infra] Manual: create a project, run 5 prompts with `versioning.auto_capture = ON`, verify pre+post snapshots in timeline (mutating runs produce both; no-op runs produce only the pre, then discard the post)
 - [ ] 12.2 [infra] Manual: with `versioning.dedup_blobs = ON`, verify `project_snapshot_blobs` shows shared blobs across snapshots when files are unchanged
 - [ ] 12.3 [infra] Manual: pin a snapshot, force retention prune, confirm pinned snapshot survives
 - [ ] 12.4 [infra] Manual: restore an older snapshot, verify a `branch-root` snapshot is created and prior tip remains
