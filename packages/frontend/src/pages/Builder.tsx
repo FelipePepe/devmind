@@ -5,7 +5,10 @@ import { readSSE } from '../lib/sse.js';
 import { PreviewPane } from '../components/builder/PreviewPane.js';
 import { PromptPanel } from '../components/builder/PromptPanel.js';
 import { ServicesPanel } from '../components/builder/ServicesPanel.js';
+import { SnapshotsTimeline } from '../components/builder/SnapshotsTimeline.js';
+import { SnapshotDiffModal } from '../components/builder/SnapshotDiffModal.js';
 import { useLogStore } from '../stores/log.js';
+import type { ProjectSnapshotsTimeline, SnapshotRetention } from '../types/index.js';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.Editor })));
 
@@ -42,6 +45,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   created_at: string;
+  linked_snapshot_id?: string | null;
 }
 
 interface Session {
@@ -161,16 +165,8 @@ interface ProjectRuntimeInstance {
   updated_at: string;
 }
 
-interface ProjectSnapshot {
-  id: string;
-  project_id: string;
-  run_id: string | null;
-  label: string | null;
-  manifest: Record<string, unknown>;
-  file_tree: unknown[];
-  resource_graph: Record<string, unknown>;
-  created_at: string;
-}
+// ProjectSnapshot type lives in types/index.ts (extended with spec-004 fields).
+// This view only needs the timeline shape from there.
 
 const COMPONENT_SNIPPETS = [
   { label: 'Navbar', icon: '≡', prompt: 'Add a responsive navigation bar at the top with the app name and navigation links' },
@@ -214,7 +210,8 @@ export default function Builder() {
   const [envVars, setEnvVars] = useState<ProjectEnvVar[]>([]);
   const [validationReports, setValidationReports] = useState<ProjectValidationReport[]>([]);
   const [runtime, setRuntime] = useState<ProjectRuntimeInstance | null>(null);
-  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
+  const [timeline, setTimeline] = useState<ProjectSnapshotsTimeline | null>(null);
+  const [diffModal, setDiffModal] = useState<{ from: string; to: string; restoreTargetId: string | null } | null>(null);
 
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('files');
   const [centerTab, setCenterTab] = useState<CenterTab>('editor');
@@ -258,7 +255,7 @@ export default function Builder() {
 
   const loadProjectStructure = async () => {
     if (!id) return;
-    const [manifestData, serviceData, apiRoutesData, databaseData, envVarData, validationData, runtimeData, snapshotData] = await Promise.all([
+    const [manifestData, serviceData, apiRoutesData, databaseData, envVarData, validationData, runtimeData, timelineData] = await Promise.all([
       apiFetch<ProjectManifest | null>(`/api/projects/${id}/manifest`),
       apiFetch<ProjectService[]>(`/api/projects/${id}/services`),
       apiFetch<ProjectApiRoute[]>(`/api/projects/${id}/api-routes`),
@@ -266,7 +263,7 @@ export default function Builder() {
       apiFetch<ProjectEnvVar[]>(`/api/projects/${id}/env`),
       apiFetch<ProjectValidationReport[]>(`/api/projects/${id}/validation`),
       apiFetch<ProjectRuntimeInstance | null>(`/api/projects/${id}/runtime`),
-      apiFetch<ProjectSnapshot[]>(`/api/projects/${id}/snapshots`),
+      apiFetch<ProjectSnapshotsTimeline>(`/api/projects/${id}/snapshots/timeline`),
     ]);
     setManifest(manifestData);
     setServices(serviceData);
@@ -275,7 +272,7 @@ export default function Builder() {
     setEnvVars(envVarData);
     setValidationReports(validationData);
     setRuntime(runtimeData);
-    setSnapshots(snapshotData);
+    setTimeline(timelineData);
   };
 
   const loadPreviewTicket = async () => {
@@ -382,11 +379,48 @@ export default function Builder() {
     setSidebarTab('files');
   };
 
-  const restoreSnapshot = async (snapshotId: string) => {
-    if (!id) return;
-    await apiFetch(`/api/projects/${id}/snapshots/${snapshotId}/restore`, { method: 'POST' });
+  // Spec 004 — restore now opens the diff modal first; the actual restore
+  // call (with `confirm: true`) is wired in `confirmRestore` below.
+  const openRestoreModal = (snapshotId: string) => {
+    if (!timeline?.tip_id || snapshotId === timeline.tip_id) return;
+    setDiffModal({ from: timeline.tip_id, to: snapshotId, restoreTargetId: snapshotId });
+  };
+
+  const openRevertFromMessage = (linkedSnapshotId: string) => {
+    if (!timeline?.tip_id) return;
+    setDiffModal({ from: timeline.tip_id, to: linkedSnapshotId, restoreTargetId: linkedSnapshotId });
+  };
+
+  const confirmRestore = async () => {
+    if (!id || !diffModal?.restoreTargetId) return;
+    await apiFetch(`/api/projects/${id}/snapshots/${diffModal.restoreTargetId}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    setDiffModal(null);
     await Promise.all([loadFiles(), loadProjectStructure()]);
     previewIframeRef.current?.contentWindow?.location.reload();
+  };
+
+  const updateSnapshotLabel = async (snapshotId: string, label: string | null) => {
+    if (!id) return;
+    await apiFetch(`/api/projects/${id}/snapshots/${snapshotId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    });
+    await loadProjectStructure();
+  };
+
+  const updateSnapshotRetention = async (snapshotId: string, retention: SnapshotRetention) => {
+    if (!id) return;
+    await apiFetch(`/api/projects/${id}/snapshots/${snapshotId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retention }),
+    });
+    await loadProjectStructure();
   };
 
   const handleChatSubmit = async (overrideInput?: string) => {
@@ -847,39 +881,12 @@ export default function Builder() {
 
           {/* SNAPSHOTS TAB */}
           {sidebarTab === 'snapshots' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)', color: 'var(--text-tertiary)', padding: '0 var(--space-2)' }}>
-                Snapshots
-              </div>
-              {snapshots.length === 0 && (
-                <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', textAlign: 'center', padding: 'var(--space-3)' }}>
-                  No snapshots yet.
-                </div>
-              )}
-              {snapshots.map((snapshot) => (
-                <div key={snapshot.id} style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'baseline' }}>
-                    <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-xs)' }}>
-                      {snapshot.label ?? 'Snapshot'}
-                    </div>
-                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
-                      {new Date(snapshot.created_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
-                    {snapshot.file_tree.length} files · {Object.keys(snapshot.resource_graph).length} groups
-                  </div>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    type="button"
-                    onClick={() => void restoreSnapshot(snapshot.id)}
-                    style={{ width: '100%', justifyContent: 'center', marginTop: 'var(--space-2)' }}
-                  >
-                    Restore
-                  </button>
-                </div>
-              ))}
-            </div>
+            <SnapshotsTimeline
+              timeline={timeline}
+              onRestore={openRestoreModal}
+              onUpdateLabel={updateSnapshotLabel}
+              onUpdateRetention={updateSnapshotRetention}
+            />
           )}
         </div>
 
@@ -982,7 +989,19 @@ export default function Builder() {
         error={chatError}
         onInputChange={setChatInput}
         onSubmit={(override) => void handleChatSubmit(override)}
+        onRevertToMessage={openRevertFromMessage}
       />
+
+      {diffModal && id && (
+        <SnapshotDiffModal
+          projectId={id}
+          fromSnapshotId={diffModal.from}
+          toSnapshotId={diffModal.to}
+          restoreTargetId={diffModal.restoreTargetId}
+          onCancel={() => setDiffModal(null)}
+          onConfirmRestore={() => void confirmRestore()}
+        />
+      )}
     </div>
   );
 }
