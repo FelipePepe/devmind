@@ -736,6 +736,65 @@ export class ProjectSnapshotsRepo {
     const flag = this.flags.get('versioning.auto_capture');
     return flag?.value === 'true';
   }
+
+  /**
+   * Discard a snapshot — used by auto-capture when the post-snapshot turned out
+   * identical to the pre-snapshot, so the timeline stays clean. Decrements blob
+   * ref counts and reclaims orphans in the same transaction.
+   */
+  discard(snapshotId: string): void {
+    const snapshot = this.findById(snapshotId);
+    if (!snapshot) return;
+    const tx = this.db.transaction(() => {
+      if (this.blobs && snapshot.file_manifest) {
+        this.blobs.decrementRef(snapshot.file_manifest.map((e) => e.hash));
+        this.blobs.deleteOrphans();
+      }
+      this.db.prepare('DELETE FROM project_snapshots WHERE id = ?').run(snapshotId);
+    });
+    tx();
+  }
+
+  /**
+   * Recount blob ref_count across all live snapshots and delete orphans.
+   * Used by the admin compact endpoint to recover storage if ref counts drift.
+   */
+  compactBlobs(): { recounted: number; orphans_deleted: number } {
+    if (!this.blobs) return { recounted: 0, orphans_deleted: 0 };
+    const tx = this.db.transaction(() => {
+      // Reset all ref counts to 0, then increment from the live manifests.
+      this.db.prepare('UPDATE project_snapshot_blobs SET ref_count = 0').run();
+      const rows = this.db
+        .prepare(`SELECT file_manifest_json FROM project_snapshots WHERE file_manifest_json IS NOT NULL`)
+        .all() as Array<{ file_manifest_json: string }>;
+      const hashes: string[] = [];
+      for (const row of rows) {
+        const manifest = parseManifest(row.file_manifest_json);
+        if (manifest) hashes.push(...manifest.map((m) => m.hash));
+      }
+      if (this.blobs && hashes.length > 0) this.blobs.incrementRef(hashes);
+      return {
+        recounted: hashes.length,
+        orphans_deleted: this.blobs ? this.blobs.deleteOrphans() : 0,
+      };
+    });
+    return tx();
+  }
+}
+
+/**
+ * Deterministic hash of a snapshot's mutable state. Used by auto-capture to
+ * detect whether the agent loop actually changed anything between the pre and
+ * post snapshots without re-reading the project tables a second time.
+ */
+export function snapshotStateHash(snapshot: ProjectSnapshotView): string {
+  return sha256(
+    JSON.stringify({
+      manifest: snapshot.manifest,
+      files: snapshot.file_manifest ?? snapshot.file_tree,
+      resources: snapshot.resource_graph,
+    })
+  );
 }
 
 function parseSnapshotObject(value: unknown): Record<string, unknown> {
