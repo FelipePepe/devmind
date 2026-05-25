@@ -7,6 +7,7 @@ const MAX_BYTES = 100_000;
 export const fileReadTool: ToolDef = {
   name: 'file_read',
   description: 'Read the contents of a file inside the workspace. Returns the file text (truncated at 100 KB).',
+  safety: 'read',
   parameters: {
     type: 'object',
     required: ['path'],

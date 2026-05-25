@@ -35,6 +35,7 @@ import { ProjectEnvVarsRepo } from './db/repos/project-env-vars.js';
 import { ProjectValidationReportsRepo, ProjectRuntimeInstancesRepo } from './db/repos/project-validation-runtime.js';
 import { ProjectSnapshotsRepo } from './db/repos/project-snapshots.js';
 import { ProjectSnapshotBlobsRepo } from './db/repos/project-snapshot-blobs.js';
+import { ToolCallAuditRepo } from './db/repos/tool-call-audit.js';
 
 import { StorageService } from './storage/storage.js';
 import { FlagsService } from './flags/flags.js';
@@ -88,6 +89,7 @@ async function start(): Promise<void> {
   const projectRuntimeInstances = new ProjectRuntimeInstancesRepo(db);
   const projectSnapshotBlobs = new ProjectSnapshotBlobsRepo(db);
   const projectSnapshots = new ProjectSnapshotsRepo(db, projectSnapshotBlobs, flags);
+  const toolAudit = new ToolCallAuditRepo(db);
 
   settingsRepo.seed('ollama.base_url', config.OLLAMA_BASE_URL, 'Ollama server base URL');
   settingsRepo.seed('ollama.coding_model', config.OLLAMA_CODING_MODEL, 'Model for code generation tasks');
@@ -130,7 +132,7 @@ async function start(): Promise<void> {
   app.route('/auth', createAuthRouter(users, challenges, wsManager));
   app.route('/api/artifacts', createStorageRouter(storage));
   app.route('/', createFlagsRouter(flagsService));
-  app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots));
+  app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots, toolAudit));
   app.route('/api/sessions', createSessionsRouter(sessions, messages));
   app.route('/api/chat', createChatRouter({
     sessions,
@@ -152,6 +154,8 @@ async function start(): Promise<void> {
     projectRuntimeInstances,
     projectSnapshots,
     jobs: queue,
+    toolAudit,
+    flags,
   }));
   app.route('/api/workspace', createWorkspaceRouter());
 

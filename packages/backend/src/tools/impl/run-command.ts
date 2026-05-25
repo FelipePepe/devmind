@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { resolve, relative } from 'path';
+import { z } from 'zod';
 import type { ToolDef, ToolContext } from '../types.js';
 
 const TIMEOUT_MS = 30_000;
@@ -44,6 +45,12 @@ export const runCommandTool: ToolDef = {
     'Run an allowed shell command inside the workspace. ' +
     'Allowed commands: git, node, pnpm, npm, npx, tsc, eslint, prettier, vitest, jest, rg, find, ls, cat, echo, pwd, diff, grep, etc. ' +
     'Returns stdout and stderr.',
+  safety: 'destructive',
+  inputSchema: z.object({
+    command: z.string().min(1).describe('Executable name (must be in allowlist)'),
+    args: z.array(z.string()),
+    cwd: z.string().optional(),
+  }),
   parameters: {
     type: 'object',
     required: ['command', 'args'],

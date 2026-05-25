@@ -41,6 +41,7 @@ function listDir(abs: string, workspaceRoot: string, depth: number): Entry[] {
 export const fileListTool: ToolDef = {
   name: 'file_list',
   description: 'List files and directories inside the workspace. Skips node_modules, dist, and hidden files.',
+  safety: 'read',
   parameters: {
     type: 'object',
     properties: {

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { MessagesRepo } from '../../db/repos/messages.js';
 import type { SessionsRepo } from '../../db/repos/sessions.js';
 import type { TasksRepo } from '../../db/repos/tasks.js';
@@ -12,6 +13,7 @@ export function createSessionHistoryTool(
   return {
     name: 'session_history',
     description: 'Return the message history for a session',
+    safety: 'read',
     parameters: {
       type: 'object',
       required: ['sessionId'],
@@ -34,6 +36,11 @@ export function createTaskUpdateTool(tasks: TasksRepo): ToolDef {
   return {
     name: 'task_update',
     description: 'Update the status of a task',
+    safety: 'write',
+    inputSchema: z.object({
+      taskId: z.string().min(1),
+      status: z.enum(['pending', 'in_progress', 'done', 'blocked']),
+    }),
     parameters: {
       type: 'object',
       required: ['taskId', 'status'],
@@ -64,6 +71,7 @@ export function createArtifactListTool(storage: StorageService, userId: string):
   return {
     name: 'artifact_list',
     description: 'List artifacts for the current user, optionally filtered by session',
+    safety: 'read',
     parameters: {
       type: 'object',
       properties: {

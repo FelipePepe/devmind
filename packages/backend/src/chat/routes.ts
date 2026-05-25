@@ -28,6 +28,8 @@ import type {
 } from '../db/repos/project-validation-runtime.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { ProjectSnapshotsRepo, ProjectSnapshotView } from '../db/repos/project-snapshots.js';
+import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
+import type { FlagsRepo } from '../db/repos/flags.js';
 import { snapshotStateHash } from '../db/repos/project-snapshots.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
@@ -202,6 +204,9 @@ export interface ChatRouterDeps {
   projectRuntimeInstances: ProjectRuntimeInstancesRepo;
   projectSnapshots: ProjectSnapshotsRepo;
   jobs: JobQueueClient;
+  // Spec 006 — for the audit log + autonomy gate.
+  toolAudit: ToolCallAuditRepo;
+  flags: FlagsRepo;
 }
 
 export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
@@ -331,10 +336,13 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
         model,
         messages: ollamaMessages,
         registry,
+        toolAudit: deps.toolAudit,
+        flags: deps.flags,
         ctx: {
           userId,
           sessionId,
           workspaceRoot: config.WORKSPACE_ROOT,
+          agentRunId: agentRun.id,
           ...(projectId !== undefined ? { projectId } : {}),
           signal: abort.signal,
         },

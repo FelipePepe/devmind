@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { ToolDef } from '../types.js';
 import type { ProjectManifestsRepo } from '../../db/repos/project-manifests.js';
 import type {
@@ -46,6 +47,7 @@ export function createProjectStructureTools(
   const readProjectManifest: ToolDef = {
     name: 'read_project_manifest',
     description: 'Read the current structured full-stack manifest for the active project.',
+    safety: 'read',
     parameters: {
       type: 'object',
       properties: {},
@@ -63,6 +65,14 @@ export function createProjectStructureTools(
     name: 'update_project_manifest',
     description:
       'Create or update the active project manifest. Use this before or alongside full-stack app generation.',
+    safety: 'write',
+    inputSchema: z.object({
+      version: z.number().int().positive().optional(),
+      appType: z.string().min(1).optional(),
+      stack: z.record(z.unknown()).optional(),
+      commands: z.record(z.unknown()).optional(),
+      entrypoints: z.record(z.unknown()).optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -107,6 +117,16 @@ export function createProjectStructureTools(
     name: 'create_project_service',
     description:
       'Create a frontend, backend, or worker service in the active project. Use this for full-stack project structure.',
+    safety: 'write',
+    inputSchema: z.object({
+      kind: z.enum(['frontend', 'backend', 'worker']),
+      name: z.string().min(1),
+      rootPath: z.string().min(1),
+      runtime: z.string().min(1),
+      port: z.number().int().min(1).max(65535).nullable().optional(),
+      status: z.enum(['planned', 'generating', 'ready', 'failed', 'disabled']).optional(),
+      config: z.record(z.unknown()).optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -172,6 +192,15 @@ export function createProjectStructureTools(
     name: 'upsert_api_route',
     description:
       'Create or update a structured API route for the active project. Use this when adding backend/API behavior.',
+    safety: 'write',
+    inputSchema: z.object({
+      serviceId: z.string().nullable().optional(),
+      method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+      path: z.string().min(1),
+      handlerPath: z.string().min(1),
+      requestSchema: z.record(z.unknown()).optional(),
+      responseSchema: z.record(z.unknown()).optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -237,6 +266,12 @@ export function createProjectStructureTools(
     name: 'upsert_database_schema',
     description:
       'Create or update a structured database schema for the active generated project.',
+    safety: 'write',
+    inputSchema: z.object({
+      engine: z.string().optional(),
+      name: z.string().min(1),
+      schema: z.record(z.unknown()),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -265,6 +300,14 @@ export function createProjectStructureTools(
     name: 'create_database_migration',
     description:
       'Create a generated database migration for the active project. Use this alongside schema changes.',
+    safety: 'write',
+    inputSchema: z.object({
+      schemaId: z.string().nullable().optional(),
+      version: z.number().int().positive().optional(),
+      name: z.string().min(1),
+      content: z.string().min(1),
+      status: z.enum(['draft', 'generated', 'applied', 'failed']).optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -320,6 +363,15 @@ export function createProjectStructureTools(
     name: 'upsert_env_var',
     description:
       'Create or update an environment variable requirement for the active generated project. Never store raw secrets; use secretRef instead.',
+    safety: 'write',
+    inputSchema: z.object({
+      serviceId: z.string().nullable().optional(),
+      name: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+      required: z.boolean().optional(),
+      secretRef: z.string().nullable().optional(),
+      defaultValue: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
@@ -374,6 +426,7 @@ export function createProjectStructureTools(
   const requestProjectValidation: ToolDef = {
     name: 'request_project_validation',
     description: 'Queue validation for the active project after structured state or files change.',
+    safety: 'write',
     parameters: {
       type: 'object',
       properties: {},
@@ -389,6 +442,11 @@ export function createProjectStructureTools(
   const createProjectSnapshot: ToolDef = {
     name: 'create_project_snapshot',
     description: 'Capture a restorable metadata snapshot of the active project manifest, files, and structured resources.',
+    safety: 'write',
+    inputSchema: z.object({
+      label: z.string().min(1).optional(),
+      runId: z.string().nullable().optional(),
+    }).passthrough(),
     parameters: {
       type: 'object',
       properties: {
