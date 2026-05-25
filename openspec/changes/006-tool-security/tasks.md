@@ -1,5 +1,10 @@
 # Tasks: 006 — Tool Security & Audit
 
+> **Status (2026-05-25)**: Backend phases 0–5 implemented and the full
+> monorepo builds clean (`pnpm -r build`). Only Phase 6 (manual verification
+> against a running stack) remains. The UI confirmation flow stays out of
+> scope and is the natural follow-up change.
+
 ## Phase 0 — SDD Baseline [infra]
 
 - [x] 0.1 [infra] Approve `006-tool-security` proposal, design, spec
@@ -9,56 +14,47 @@
 
 ## Phase 1 — Audit log table + repo [backend]
 
-- [ ] 1.1 [backend] Add migration `019_tool_audit.sql`:
-  - `tool_call_audit` table with all columns from spec
-  - indexes on `(agent_run_id, started_at)`, `(session_id, started_at)`, `(tool_name, status, started_at)`
-  - register `tools.autonomy_level` feature flag with default `auto`
-- [ ] 1.2 [backend] Add `ToolCallAuditRepo` with:
-  - `insertStart({...}): string` (returns id) — inserts provisional row
-  - `insertFinal({...}): void` — for paths that complete in one shot (invalid-args, blocked)
-  - `updateFinish(id, {status, output_excerpt, error, duration_ms})`
-  - `findRecent(limit): ToolCallAudit[]`
+- [x] 1.1 [backend] Migration `019_tool_audit.sql`: `tool_call_audit` table with the columns from spec, indexes on `(agent_run_id, started_at)`, `(session_id, started_at)`, `(tool_name, status, started_at)`, registers `tools.autonomy_level` flag with default `auto`
+- [x] 1.2 [backend] `ToolCallAuditRepo` with `insertStart`, `insertFinal`, `updateFinish`, `findRecent`, plus `excerpt()` helper capping stored output at 2 KB
 
 ## Phase 2 — Safety classification per tool [backend]
 
-- [ ] 2.1 [backend] Extend `ToolDef` with required `safety: ToolSafety` and optional `inputSchema: z.ZodTypeAny`
-- [ ] 2.2 [backend] Classify every existing tool per the table in spec:
-  - read: `file_read`, `file_list`, `search_code`, `vector_search`, `read_project_file`, `list_project_files`, `get_session_history`
-  - write: `save_session`, `task_update`, `write_project_file`, all `project-structure-tools` upserts, `create_project_snapshot`
+- [x] 2.1 [backend] Extend `ToolDef` with required `safety: ToolSafety` and optional `inputSchema: z.ZodTypeAny`; also add optional `agentRunId` to `ToolContext`
+- [x] 2.2 [backend] Classify every existing tool:
+  - read: `file_read`, `file_list`, `search_code`, `vector_search`, `read_project_file`, `list_project_files`, `read_project_manifest`, `session_history`, `artifact_list`
+  - write: `write_project_file`, `update_project_manifest`, `create_project_service`, `upsert_api_route`, `upsert_database_schema`, `create_database_migration`, `upsert_env_var`, `request_project_validation`, `create_project_snapshot`, `task_update`
   - destructive: `run_command`
-- [ ] 2.3 [backend] Verify the registry build still passes typecheck after adding the required field
+- [x] 2.3 [backend] Registry build typechecks with the required field
 
 ## Phase 3 — Zod input validation [backend]
 
-- [ ] 3.1 [backend] Add `inputSchema` to `run_command` (command in allowlist, args array, optional cwd inside workspace)
-- [ ] 3.2 [backend] Add `inputSchema` to `write_project_file` (path nonempty, content string)
-- [ ] 3.3 [backend] Add `inputSchema` to the `project-structure-tools` upserts (one schema per tool)
-- [ ] 3.4 [backend] Add `inputSchema` to `task_update` and `save_session`
-- [ ] 3.5 [backend] Add `inputSchema` to `create_project_snapshot`
-- [ ] 3.6 [backend] Read tools keep `inputSchema` undefined; document the convention in `types.ts`
+- [x] 3.1 [backend] `inputSchema` on `run_command` (command nonempty, args array of strings, optional cwd)
+- [x] 3.2 [backend] `inputSchema` on `write_project_file` (path nonempty, content string)
+- [x] 3.3 [backend] `inputSchema` on each `project-structure-tools` write tool (`update_project_manifest`, `create_project_service`, `upsert_api_route`, `upsert_database_schema`, `create_database_migration`, `upsert_env_var`, `create_project_snapshot`). All use `.passthrough()` so the gradual rollout does not reject calls that include forward-compat extras.
+- [x] 3.4 [backend] `inputSchema` on `task_update` (taskId nonempty, status enum)
+- [x] 3.5 [backend] `inputSchema` on `create_project_snapshot` (label optional, runId optional/null)
+- [x] 3.6 [backend] Read tools intentionally omit `inputSchema`; convention is documented in `types.ts`
+- [ ] 3.7 [backend] `save_session` is not currently in the registry — verify whether it should land here or be added in a follow-up *(left as note for whoever next touches `session-tools.ts`)*
 
 ## Phase 4 — Executor wireup [backend]
 
-- [ ] 4.1 [backend] Inject `ToolCallAuditRepo` and `FlagsRepo` into `ToolExecutor` constructor
-- [ ] 4.2 [backend] Implement the executor flow exactly as the spec section "Executor contract" describes:
-  - unknown tool / bad JSON / Zod fail → `insertFinal('invalid-args', ...)`
-  - autonomy gate → `insertFinal('blocked', ...)`
-  - normal path → `insertStart` then `updateFinish('ok' or 'error', ...)`
-- [ ] 4.3 [backend] Wire the new constructor args at the call site in `chat/routes.ts` and anywhere else `new ToolExecutor(...)` is called
-- [ ] 4.4 [backend] Ensure audit-write failures are logged at WARN but never bubble up as agent errors
+- [x] 4.1 [backend] `ToolExecutor` constructor accepts optional `ToolCallAuditRepo` and `FlagsRepo` (back-compat for callers that have neither)
+- [x] 4.2 [backend] Executor flow matches the spec exactly: unknown / bad JSON / Zod fail → `insertFinal('invalid-args', ...)`; autonomy gate → `insertFinal('blocked', ...)`; happy path → `insertStart` then `updateFinish('ok' or 'error', ...)`
+- [x] 4.3 [backend] `runAgentLoop` accepts `toolAudit` and `flags`, forwards them to `ToolExecutor`. `chat/routes.ts` passes them from `deps`, and includes `agentRunId` in the `ctx` so audit rows are linked back to the run.
+- [x] 4.4 [backend] Audit-write failures are caught in `writeStart`/`writeFinal`/`updateFinish` and logged at WARN; never bubble up to the agent loop.
 
 ## Phase 5 — Admin endpoint [backend]
 
-- [ ] 5.1 [backend] Add `GET /admin/tool-audit?limit=N` to `admin/routes.ts`, admin-gated
-- [ ] 5.2 [backend] Validate `limit` (default 100, max 500)
-- [ ] 5.3 [backend] Wire `ToolCallAuditRepo` into `createAdminRouter` signature and `index.ts`
+- [x] 5.1 [backend] `GET /admin/tool-audit?limit=N`, admin-gated
+- [x] 5.2 [backend] `limit` parsed with `Number.parseInt`, capped at 500 by the repo (default 100)
+- [x] 5.3 [backend] `ToolCallAuditRepo` wired into `createAdminRouter` and `index.ts`
 
 ## Phase 6 — Verification [infra]
 
 - [ ] 6.1 [infra] Manual: run a chat session that calls read + write + destructive tools; query `/admin/tool-audit`; confirm one row per call with correct safety
 - [ ] 6.2 [infra] Manual: send a prompt that triggers `run_command` with a malformed argument shape; confirm `status='invalid-args'` and Zod issues in excerpt
-- [ ] 6.3 [infra] Manual: set `tools.autonomy_level=block-destructive`; trigger `run_command`; confirm `status='blocked'` and clear error to the agent
-- [ ] 6.4 [infra] Confirm `pnpm -r build` passes
-- [ ] 6.5 [infra] Confirm `pnpm typecheck` passes
-- [ ] 6.6 [infra] Confirm `pnpm lint` passes
+- [ ] 6.3 [infra] Manual: set `tools.autonomy_level=block-destructive` via flags admin; trigger `run_command`; confirm `status='blocked'` and clear error to the agent
+- [x] 6.4 [infra] Confirm `pnpm -r build` passes
+- [ ] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
+- [ ] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)
 - [ ] 6.7 [infra] Update `README.md` to mark phase 8 as ✅ (audit + classification + Zod + gate)

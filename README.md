@@ -134,7 +134,7 @@ Ver [`DESIGN.md`](./DESIGN.md) — fuente de verdad del sistema de tokens visual
 | **Builder — full-stack generator** | ✅ | Manifest, servicios, API routes, BBDD SQLite, env vars, validación y snapshots |
 | Indexación semántica (HNSW) | ✅ | Embeddings Ollama, búsqueda vectorial |
 | Workers — jobs reales de generación | ✅ | Generación manifest-aware, materialización en workspace, validación y rebuild preview |
-| Seguridad y gobierno de tools | 🔲 | |
+| Seguridad y gobierno de tools | ✅ | Audit log de tool calls (`tool_call_audit`), clasificación safety (read/write/destructive), validación Zod estricta en tools `write`+`destructive`, gate global `tools.autonomy_level=block-destructive`, `GET /admin/tool-audit` (spec 006) |
 | Tests, CI, release | 🔲 | |
 
 Ver [`RECOVERY_PLAN.md`](./RECOVERY_PLAN.md) para el contexto histórico de la migración.
