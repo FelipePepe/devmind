@@ -59,4 +59,14 @@ export class ProjectsRepo {
       .prepare('DELETE FROM projects WHERE id = ? AND user_id = ?')
       .run(projectId, userId);
   }
+
+  updateSnapshotRetention(userId: string, projectId: string, keep: number): void {
+    this.db
+      .prepare(
+        `UPDATE projects
+         SET snapshot_retention_keep = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`
+      )
+      .run(keep, new Date().toISOString(), projectId, userId);
+  }
 }

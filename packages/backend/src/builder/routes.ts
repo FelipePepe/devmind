@@ -32,7 +32,8 @@ import type {
   ProjectValidationReportsRepo,
   ProjectRuntimeInstancesRepo,
 } from '../db/repos/project-validation-runtime.js';
-import type { ProjectSnapshotsRepo } from '../db/repos/project-snapshots.js';
+import type { ProjectSnapshotsRepo, SnapshotRetention } from '../db/repos/project-snapshots.js';
+import type { ProjectSnapshotBlobsRepo } from '../db/repos/project-snapshot-blobs.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { HonoEnv } from '../types.js';
 
@@ -173,6 +174,19 @@ const CreateSnapshotSchema = z.object({
   label: z.string().trim().min(1).max(160).nullable().optional(),
 });
 
+const RestoreSnapshotSchema = z.object({
+  confirm: z.literal(true),
+});
+
+const UpdateSnapshotMetadataSchema = z.object({
+  label: z.string().trim().min(1).max(160).nullable().optional(),
+  retention: z.enum(['ephemeral', 'pinned']).optional(),
+});
+
+const UpdateSnapshotRetentionSchema = z.object({
+  snapshot_retention_keep: z.number().int().min(1).max(500),
+});
+
 function signPreviewTicket(projectId: string, exp: number): string {
   return createHmac('sha256', config.JWT_SECRET)
     .update(`${projectId}.${exp}`)
@@ -207,6 +221,7 @@ export function createBuilderRouter(
   projectValidationReports: ProjectValidationReportsRepo,
   projectRuntimeInstances: ProjectRuntimeInstancesRepo,
   projectSnapshots: ProjectSnapshotsRepo,
+  projectSnapshotBlobs: ProjectSnapshotBlobsRepo,
   jobs: JobQueueClient
 ): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
@@ -707,18 +722,111 @@ export function createBuilderRouter(
     return c.json(snapshot, 201);
   });
 
-  router.post('/projects/:id/snapshots/:snapshotId/restore', authMiddleware, (c) => {
+  router.post('/projects/:id/snapshots/:snapshotId/restore', authMiddleware, async (c) => {
     const userId = c.get('userId');
     const projectId = c.req.param('id');
     const snapshotId = c.req.param('snapshotId');
     if (!projectId || !snapshotId) return c.json({ error: 'Missing id' }, 400);
     const project = projects.findById(userId, projectId);
     if (!project) return c.json({ error: 'Project not found' }, 404);
+    const bodyRaw = await c.req.json<unknown>().catch(() => ({}));
+    const parsed = RestoreSnapshotSchema.safeParse(bodyRaw);
+    if (!parsed.success) {
+      return c.json({ error: 'Restore requires { confirm: true }' }, 400);
+    }
     projectSnapshots.capture(projectId, null, 'Before restore');
-    const snapshot = projectSnapshots.restore(projectId, snapshotId);
+    const snapshot = projectSnapshots.restore(projectId, snapshotId, { confirm: true });
     if (!snapshot) return c.json({ error: 'Snapshot not found' }, 404);
+    const branchRoot = projectSnapshots.findCurrentTip(projectId);
     jobs.enqueue('rebuildPreview', { projectId });
-    return c.json({ status: 'restored', snapshot });
+    return c.json({
+      status: 'restored',
+      snapshot,
+      branch_root_id: branchRoot?.id ?? null,
+    });
+  });
+
+  router.get('/projects/:id/snapshots/timeline', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    return c.json(projectSnapshots.getTimeline(projectId));
+  });
+
+  router.get('/projects/:id/snapshots/:a/diff/:b', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const a = c.req.param('a');
+    const b = c.req.param('b');
+    if (!projectId || !a || !b) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const diff = projectSnapshots.getDiff(projectId, a, b);
+    if (!diff) return c.json({ error: 'Snapshot not found or belongs to another project' }, 404);
+    return c.json(diff);
+  });
+
+  router.patch('/projects/:id/snapshots/:snapshotId', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const snapshotId = c.req.param('snapshotId');
+    if (!projectId || !snapshotId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const existing = projectSnapshots.findById(snapshotId);
+    if (!existing || existing.project_id !== projectId) {
+      return c.json({ error: 'Snapshot not found' }, 404);
+    }
+    const bodyRaw = await c.req.json<unknown>().catch(() => ({}));
+    const parsed = UpdateSnapshotMetadataSchema.safeParse(bodyRaw);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
+    }
+    const patch: { label?: string | null; retention?: SnapshotRetention } = {};
+    if (Object.prototype.hasOwnProperty.call(parsed.data, 'label')) {
+      patch.label = parsed.data.label ?? null;
+    }
+    if (parsed.data.retention) patch.retention = parsed.data.retention;
+    const updated = projectSnapshots.updateMetadata(snapshotId, patch);
+    return c.json(updated);
+  });
+
+  router.patch('/projects/:id/snapshot-retention', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const bodyRaw = await c.req.json<unknown>().catch(() => ({}));
+    const parsed = UpdateSnapshotRetentionSchema.safeParse(bodyRaw);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400);
+    }
+    projects.updateSnapshotRetention(userId, projectId, parsed.data.snapshot_retention_keep);
+    return c.json({ snapshot_retention_keep: parsed.data.snapshot_retention_keep });
+  });
+
+  router.get('/projects/:id/snapshot-blobs/:hash', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const hash = c.req.param('hash');
+    if (!projectId || !hash) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const blob = projectSnapshotBlobs.getByHash(hash);
+    if (!blob) return c.json({ error: 'Blob not found' }, 404);
+    if (blob.size_bytes > 10 * 1024 * 1024) {
+      return c.json({ error: 'Blob too large for inline fetch' }, 413);
+    }
+    return new Response(new Uint8Array(blob.content), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      },
+    });
   });
 
   router.get('/projects/:id/preview', authMiddleware, (c) => {

@@ -1,4 +1,10 @@
 import type Database from 'better-sqlite3';
+import type { ProjectSnapshotBlobsRepo } from './project-snapshot-blobs.js';
+import type { FlagsRepo } from './flags.js';
+import { sha256 } from './hashing.js';
+
+export type SnapshotTrigger = 'manual' | 'auto-pre-agent' | 'auto-post-agent' | 'milestone' | 'branch-root';
+export type SnapshotRetention = 'ephemeral' | 'pinned';
 
 export interface ProjectSnapshot {
   id: string;
@@ -9,6 +15,14 @@ export interface ProjectSnapshot {
   file_tree_json: string;
   resource_graph_json: string;
   created_at: string;
+  // spec 004 extensions
+  parent_snapshot_id: string | null;
+  trigger: SnapshotTrigger;
+  agent_run_id: string | null;
+  message_id: string | null;
+  retention: SnapshotRetention;
+  file_manifest_json: string | null;
+  screenshot_blob_hash: string | null;
 }
 
 export interface ProjectSnapshotView {
@@ -20,6 +34,55 @@ export interface ProjectSnapshotView {
   file_tree: unknown[];
   resource_graph: Record<string, unknown>;
   created_at: string;
+  // spec 004 extensions
+  parent_snapshot_id: string | null;
+  trigger: SnapshotTrigger;
+  agent_run_id: string | null;
+  message_id: string | null;
+  retention: SnapshotRetention;
+  file_manifest: FileManifestEntry[] | null;
+  screenshot_blob_hash: string | null;
+}
+
+export interface FileManifestEntry {
+  path: string;
+  hash: string;
+  language?: string;
+}
+
+export interface CaptureOptions {
+  runId?: string | null;
+  label?: string | null;
+  trigger?: SnapshotTrigger;
+  parentSnapshotId?: string | null;
+  agentRunId?: string | null;
+  messageId?: string | null;
+  retention?: SnapshotRetention;
+}
+
+export interface SnapshotDiff {
+  files: {
+    added: FileManifestEntry[];
+    removed: FileManifestEntry[];
+    modified: Array<{ path: string; a_hash: string; b_hash: string }>;
+  };
+  resources: Record<string, { added: unknown[]; removed: unknown[] }>;
+}
+
+export interface TimelineNode {
+  id: string;
+  parent_id: string | null;
+  trigger: SnapshotTrigger;
+  retention: SnapshotRetention;
+  label: string | null;
+  created_at: string;
+  message_id: string | null;
+  agent_run_id: string | null;
+}
+
+export interface SnapshotTimeline {
+  tip_id: string | null;
+  nodes: TimelineNode[];
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> {
@@ -42,6 +105,22 @@ function parseJsonArray(raw: string): unknown[] {
   }
 }
 
+function parseManifest(raw: string | null): FileManifestEntry[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(
+      (entry): entry is FileManifestEntry =>
+        !!entry && typeof entry === 'object' &&
+        typeof (entry as { path?: unknown }).path === 'string' &&
+        typeof (entry as { hash?: unknown }).hash === 'string'
+    );
+  } catch {
+    return null;
+  }
+}
+
 function toView(row: ProjectSnapshot): ProjectSnapshotView {
   return {
     id: row.id,
@@ -52,11 +131,26 @@ function toView(row: ProjectSnapshot): ProjectSnapshotView {
     file_tree: parseJsonArray(row.file_tree_json),
     resource_graph: parseJsonObject(row.resource_graph_json),
     created_at: row.created_at,
+    parent_snapshot_id: row.parent_snapshot_id,
+    trigger: row.trigger,
+    agent_run_id: row.agent_run_id,
+    message_id: row.message_id,
+    retention: row.retention,
+    file_manifest: parseManifest(row.file_manifest_json),
+    screenshot_blob_hash: row.screenshot_blob_hash,
   };
 }
 
 export class ProjectSnapshotsRepo {
-  constructor(private db: Database.Database) {}
+  constructor(
+    private db: Database.Database,
+    private blobs?: ProjectSnapshotBlobsRepo,
+    private flags?: FlagsRepo
+  ) {}
+
+  // ---------------------------------------------------------------------------
+  // Reads
+  // ---------------------------------------------------------------------------
 
   findByProject(projectId: string, limit = 20): ProjectSnapshotView[] {
     const rows = this.db
@@ -72,19 +166,87 @@ export class ProjectSnapshotsRepo {
     return row ? toView(row) : undefined;
   }
 
+  findCurrentTip(projectId: string): ProjectSnapshotView | undefined {
+    const row = this.db
+      .prepare(
+        'SELECT * FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 1'
+      )
+      .get(projectId) as ProjectSnapshot | undefined;
+    return row ? toView(row) : undefined;
+  }
+
+  findByMessageId(messageId: string): ProjectSnapshotView | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM project_snapshots WHERE message_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(messageId) as ProjectSnapshot | undefined;
+    return row ? toView(row) : undefined;
+  }
+
+  getTimeline(projectId: string): SnapshotTimeline {
+    const rows = this.db
+      .prepare(
+        `SELECT id, parent_snapshot_id, trigger, retention, label, created_at, message_id, agent_run_id
+         FROM project_snapshots WHERE project_id = ? ORDER BY created_at ASC`
+      )
+      .all(projectId) as Array<{
+        id: string;
+        parent_snapshot_id: string | null;
+        trigger: SnapshotTrigger;
+        retention: SnapshotRetention;
+        label: string | null;
+        created_at: string;
+        message_id: string | null;
+        agent_run_id: string | null;
+      }>;
+
+    const tip = this.db
+      .prepare('SELECT id FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(projectId) as { id: string } | undefined;
+
+    return {
+      tip_id: tip?.id ?? null,
+      nodes: rows.map((r) => ({
+        id: r.id,
+        parent_id: r.parent_snapshot_id,
+        trigger: r.trigger,
+        retention: r.retention,
+        label: r.label,
+        created_at: r.created_at,
+        message_id: r.message_id,
+        agent_run_id: r.agent_run_id,
+      })),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Writes
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Low-level insert. All spec-004 fields are optional and default to safe values.
+   */
   create(projectId: string, input: {
     runId?: string | null;
     label?: string | null;
     manifest: Record<string, unknown>;
     fileTree: unknown[];
     resourceGraph: Record<string, unknown>;
+    trigger?: SnapshotTrigger;
+    parentSnapshotId?: string | null;
+    agentRunId?: string | null;
+    messageId?: string | null;
+    retention?: SnapshotRetention;
+    fileManifest?: FileManifestEntry[] | null;
+    screenshotBlobHash?: string | null;
   }): ProjectSnapshotView {
     const id = crypto.randomUUID();
     this.db
       .prepare(
         `INSERT INTO project_snapshots
-         (id, project_id, run_id, label, manifest_json, file_tree_json, resource_graph_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, project_id, run_id, label, manifest_json, file_tree_json, resource_graph_json, created_at,
+          parent_snapshot_id, trigger, agent_run_id, message_id, retention,
+          file_manifest_json, screenshot_blob_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -94,7 +256,14 @@ export class ProjectSnapshotsRepo {
         JSON.stringify(input.manifest),
         JSON.stringify(input.fileTree),
         JSON.stringify(input.resourceGraph),
-        new Date().toISOString()
+        new Date().toISOString(),
+        input.parentSnapshotId ?? null,
+        input.trigger ?? 'manual',
+        input.agentRunId ?? null,
+        input.messageId ?? null,
+        input.retention ?? 'ephemeral',
+        input.fileManifest ? JSON.stringify(input.fileManifest) : null,
+        input.screenshotBlobHash ?? null
       );
     const row = this.db
       .prepare('SELECT * FROM project_snapshots WHERE id = ?')
@@ -102,7 +271,19 @@ export class ProjectSnapshotsRepo {
     return toView(row);
   }
 
-  capture(projectId: string, runId?: string | null, label?: string | null): ProjectSnapshotView {
+  /**
+   * Capture current project state into a snapshot.
+   *
+   * Back-compat note: callers from spec 003 invoke `capture(projectId, runId?, label?)`.
+   * The new optional fourth argument adds spec-004 metadata (trigger, parent,
+   * agentRunId, messageId, retention) without breaking those callers.
+   */
+  capture(
+    projectId: string,
+    runId?: string | null,
+    label?: string | null,
+    options: CaptureOptions = {}
+  ): ProjectSnapshotView {
     const manifest = this.db
       .prepare('SELECT version, app_type, stack_json, commands_json, entrypoints_json FROM project_manifests WHERE project_id = ?')
       .get(projectId) as {
@@ -134,13 +315,39 @@ export class ProjectSnapshotsRepo {
       .prepare('SELECT service_id, name, required, secret_ref, default_value, description FROM project_env_vars WHERE project_id = ? ORDER BY service_id, name')
       .all(projectId);
 
-    const input: {
-      runId?: string | null;
-      label?: string | null;
-      manifest: Record<string, unknown>;
-      fileTree: unknown[];
-      resourceGraph: Record<string, unknown>;
-    } = {
+    // Parent defaults to current tip when caller did not supply one.
+    const parentSnapshotId =
+      options.parentSnapshotId !== undefined
+        ? options.parentSnapshotId
+        : this.findCurrentTip(projectId)?.id ?? null;
+
+    // Blob-dedup path: if enabled, hash file contents and persist them in blob
+    // storage; the snapshot row stores only the manifest (path -> hash).
+    let fileManifest: FileManifestEntry[] | null = null;
+    if (this.isDedupEnabled() && this.blobs) {
+      fileManifest = [];
+      const hashes: string[] = [];
+      for (const file of files) {
+        const buf = Buffer.from(file.content, 'utf8');
+        const hash = sha256(buf);
+        this.blobs.writeIfMissing(hash, buf);
+        const entry: FileManifestEntry = { path: file.path, hash };
+        if (file.language) entry.language = file.language;
+        fileManifest.push(entry);
+        hashes.push(hash);
+      }
+      this.blobs.incrementRef(hashes);
+    }
+
+    const baseInput = {
+      runId: runId ?? options.runId ?? null,
+      label: label ?? options.label ?? null,
+      trigger: options.trigger ?? 'manual',
+      parentSnapshotId,
+      agentRunId: options.agentRunId ?? null,
+      messageId: options.messageId ?? null,
+      retention: options.retention ?? 'ephemeral',
+      fileManifest,
       manifest: manifest ? {
         version: manifest.version,
         appType: manifest.app_type,
@@ -158,12 +365,24 @@ export class ProjectSnapshotsRepo {
         envVars,
       },
     };
-    if (runId !== undefined) input.runId = runId;
-    if (label !== undefined) input.label = label;
-    return this.create(projectId, input);
+    return this.create(projectId, baseInput);
   }
 
-  restore(projectId: string, snapshotId: string): ProjectSnapshotView | undefined {
+  /**
+   * Restore project state from `snapshotId`. Rehydrates project_files,
+   * project_services, project_api_routes, project_db_schemas, project_db_migrations,
+   * app_resources, project_env_vars and project_manifests in a single transaction.
+   * After successful rehydrate, inserts a `branch-root` snapshot that points to
+   * `snapshotId` as its parent, so the timeline visibly forks.
+   */
+  restore(
+    projectId: string,
+    snapshotId: string,
+    opts: { confirm?: boolean } = {}
+  ): ProjectSnapshotView | undefined {
+    if (opts.confirm === false) {
+      throw new Error('restore requires confirm=true');
+    }
     const snapshot = this.findById(snapshotId);
     if (!snapshot || snapshot.project_id !== projectId) return undefined;
 
@@ -344,7 +563,178 @@ export class ProjectSnapshotsRepo {
     });
 
     tx();
+
+    // Branch-root snapshot: marks the fork point on the timeline so the UI can
+    // visually distinguish a restore from a normal forward edit.
+    this.create(projectId, {
+      runId: snapshot.run_id,
+      label: snapshot.label,
+      trigger: 'branch-root',
+      parentSnapshotId: snapshotId,
+      retention: 'ephemeral',
+      manifest: snapshot.manifest,
+      fileTree: snapshot.file_tree,
+      resourceGraph: snapshot.resource_graph,
+    });
+
     return snapshot;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spec 004 — metadata mutations
+  // ---------------------------------------------------------------------------
+
+  updateMetadata(
+    id: string,
+    patch: { label?: string | null; retention?: SnapshotRetention; screenshotBlobHash?: string | null }
+  ): ProjectSnapshotView | undefined {
+    const sets: string[] = [];
+    const values: Array<string | null> = [];
+    if (Object.prototype.hasOwnProperty.call(patch, 'label')) {
+      sets.push('label = ?');
+      values.push(patch.label ?? null);
+    }
+    if (patch.retention) {
+      sets.push('retention = ?');
+      values.push(patch.retention);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'screenshotBlobHash')) {
+      sets.push('screenshot_blob_hash = ?');
+      values.push(patch.screenshotBlobHash ?? null);
+    }
+    if (sets.length === 0) return this.findById(id);
+    this.db
+      .prepare(`UPDATE project_snapshots SET ${sets.join(', ')} WHERE id = ?`)
+      .run(...values, id);
+    return this.findById(id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spec 004 — diff
+  // ---------------------------------------------------------------------------
+
+  getDiff(projectId: string, snapshotIdA: string, snapshotIdB: string): SnapshotDiff | undefined {
+    const a = this.findById(snapshotIdA);
+    const b = this.findById(snapshotIdB);
+    if (!a || !b) return undefined;
+    if (a.project_id !== projectId || b.project_id !== projectId) return undefined;
+
+    const manifestA = this.manifestFromSnapshot(a);
+    const manifestB = this.manifestFromSnapshot(b);
+
+    const mapA = new Map(manifestA.map((e) => [e.path, e.hash]));
+    const mapB = new Map(manifestB.map((e) => [e.path, e.hash]));
+
+    const added: FileManifestEntry[] = [];
+    const removed: FileManifestEntry[] = [];
+    const modified: Array<{ path: string; a_hash: string; b_hash: string }> = [];
+
+    for (const entry of manifestB) {
+      const prior = mapA.get(entry.path);
+      if (prior === undefined) added.push(entry);
+      else if (prior !== entry.hash) modified.push({ path: entry.path, a_hash: prior, b_hash: entry.hash });
+    }
+    for (const entry of manifestA) {
+      if (!mapB.has(entry.path)) removed.push(entry);
+    }
+
+    const resources = this.diffResourceGraph(a.resource_graph, b.resource_graph);
+    return { files: { added, removed, modified }, resources };
+  }
+
+  private manifestFromSnapshot(snapshot: ProjectSnapshotView): FileManifestEntry[] {
+    if (snapshot.file_manifest) return snapshot.file_manifest;
+    // Legacy fallback: hash file_tree contents on the fly so diff still works for
+    // snapshots captured before dedup was enabled.
+    const out: FileManifestEntry[] = [];
+    for (const raw of snapshot.file_tree) {
+      const item = parseSnapshotObject(raw);
+      const path = typeof item['path'] === 'string' ? item['path'] : '';
+      const content = typeof item['content'] === 'string' ? item['content'] : '';
+      if (!path) continue;
+      const entry: FileManifestEntry = { path, hash: sha256(content) };
+      if (typeof item['language'] === 'string') entry.language = item['language'];
+      out.push(entry);
+    }
+    return out;
+  }
+
+  private diffResourceGraph(
+    a: Record<string, unknown>,
+    b: Record<string, unknown>
+  ): Record<string, { added: unknown[]; removed: unknown[] }> {
+    const types = ['services', 'apiRoutes', 'dbSchemas', 'dbMigrations', 'appResources', 'envVars'];
+    const result: Record<string, { added: unknown[]; removed: unknown[] }> = {};
+    for (const type of types) {
+      const arrA = Array.isArray(a[type]) ? (a[type] as unknown[]) : [];
+      const arrB = Array.isArray(b[type]) ? (b[type] as unknown[]) : [];
+      const setA = new Set(arrA.map((item) => JSON.stringify(item)));
+      const setB = new Set(arrB.map((item) => JSON.stringify(item)));
+      result[type] = {
+        added: arrB.filter((item) => !setA.has(JSON.stringify(item))),
+        removed: arrA.filter((item) => !setB.has(JSON.stringify(item))),
+      };
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spec 004 — retention pruning
+  // ---------------------------------------------------------------------------
+
+  prune(projectId: string): number {
+    const project = this.db
+      .prepare('SELECT snapshot_retention_keep FROM projects WHERE id = ?')
+      .get(projectId) as { snapshot_retention_keep: number } | undefined;
+    if (!project) return 0;
+    const keep = project.snapshot_retention_keep ?? 20;
+
+    const ephemerals = this.db
+      .prepare(
+        `SELECT id, file_manifest_json, file_tree_json
+         FROM project_snapshots
+         WHERE project_id = ? AND retention = 'ephemeral'
+         ORDER BY created_at DESC`
+      )
+      .all(projectId) as Array<{
+        id: string;
+        file_manifest_json: string | null;
+        file_tree_json: string;
+      }>;
+
+    if (ephemerals.length <= keep) return 0;
+
+    const victims = ephemerals.slice(keep);
+    const tx = this.db.transaction(() => {
+      const decrementHashes: string[] = [];
+      for (const victim of victims) {
+        const manifest = parseManifest(victim.file_manifest_json);
+        if (manifest) decrementHashes.push(...manifest.map((m) => m.hash));
+        this.db.prepare('DELETE FROM project_snapshots WHERE id = ?').run(victim.id);
+      }
+      if (this.blobs && decrementHashes.length > 0) {
+        this.blobs.decrementRef(decrementHashes);
+        this.blobs.deleteOrphans();
+      }
+    });
+    tx();
+    return victims.length;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spec 004 — helpers
+  // ---------------------------------------------------------------------------
+
+  private isDedupEnabled(): boolean {
+    if (!this.flags) return false;
+    const flag = this.flags.get('versioning.dedup_blobs');
+    return flag?.value === 'true';
+  }
+
+  isAutoCaptureEnabled(): boolean {
+    if (!this.flags) return false;
+    const flag = this.flags.get('versioning.auto_capture');
+    return flag?.value === 'true';
   }
 }
 
