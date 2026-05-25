@@ -28,6 +28,7 @@ import type {
 } from '../db/repos/project-validation-runtime.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { ProjectSnapshotsRepo, ProjectSnapshotView } from '../db/repos/project-snapshots.js';
+import { snapshotStateHash } from '../db/repos/project-snapshots.js';
 import type { HonoEnv } from '../types.js';
 import type { OllamaMessage } from '../ollama/types.js';
 
@@ -287,6 +288,25 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
       const agentRun = deps.agentRuns.create(sessionId, userId, model);
       logger.info({ agentRunId: agentRun.id, sessionId, model, historyLength: history.length }, 'Chat: agent run started');
 
+      // Spec 004 — Phase 4: auto-capture pre-snapshot.
+      // Captures the project state before the agent runs so we have a guaranteed
+      // rollback target if the run goes wrong. Failure here must not abort the
+      // agent run — the user should still get their response.
+      let preSnapshotId: string | null = null;
+      let preStateHash: string | null = null;
+      if (projectId !== undefined && deps.projectSnapshots.isAutoCaptureEnabled()) {
+        try {
+          const pre = deps.projectSnapshots.capture(projectId, null, null, {
+            trigger: 'auto-pre-agent',
+            agentRunId: agentRun.id,
+          });
+          preSnapshotId = pre.id;
+          preStateHash = snapshotStateHash(pre);
+        } catch (err) {
+          logger.warn({ err, projectId, agentRunId: agentRun.id }, 'auto-pre-agent snapshot failed');
+        }
+      }
+
       const registry = createToolRegistry(
         {
           sessions: deps.sessions,
@@ -355,9 +375,44 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
               assistantContent || '(empty response)',
               agentRun.id
             );
+
+            // Spec 004 — Phase 4: auto-capture post-snapshot.
+            // Capture current state, compare against pre to detect mutation, and
+            // discard the post snapshot if nothing changed (keeps the timeline
+            // clean). On mutation, prune ephemerals to honor retention policy.
+            // Errors must not drop the agent run result already sent above.
+            let postSnapshotId: string | null = null;
+            if (projectId !== undefined && preStateHash !== null && deps.projectSnapshots.isAutoCaptureEnabled()) {
+              try {
+                const post = deps.projectSnapshots.capture(projectId, null, null, {
+                  trigger: 'auto-post-agent',
+                  agentRunId: agentRun.id,
+                  messageId: assistantMsg.id,
+                  parentSnapshotId: preSnapshotId,
+                });
+                const postHash = snapshotStateHash(post);
+                if (postHash === preStateHash) {
+                  deps.projectSnapshots.discard(post.id);
+                } else {
+                  postSnapshotId = post.id;
+                  try {
+                    deps.projectSnapshots.prune(projectId);
+                  } catch (err) {
+                    logger.warn({ err, projectId }, 'snapshot prune failed');
+                  }
+                }
+              } catch (err) {
+                logger.warn({ err, projectId, agentRunId: agentRun.id }, 'auto-post-agent snapshot failed');
+              }
+            }
+
             await stream.writeSSE({
               event: 'done',
-              data: JSON.stringify({ messageId: assistantMsg.id, agentRunId: agentRun.id }),
+              data: JSON.stringify({
+                messageId: assistantMsg.id,
+                agentRunId: agentRun.id,
+                ...(postSnapshotId ? { snapshotId: postSnapshotId } : {}),
+              }),
             });
           },
           async onError(err, iterations) {

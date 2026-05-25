@@ -11,6 +11,10 @@ export interface Message {
   created_at: string;
 }
 
+export interface MessageWithSnapshot extends Message {
+  linked_snapshot_id: string | null;
+}
+
 export class MessagesRepo {
   constructor(private db: Database.Database) {}
 
@@ -32,11 +36,18 @@ export class MessagesRepo {
       .get(id) as Message;
   }
 
-  findBySession(sessionId: string, limit = 100): Message[] {
+  findBySession(sessionId: string, limit = 100): MessageWithSnapshot[] {
+    // LEFT JOIN onto project_snapshots so the frontend can render a "revert to
+    // here" affordance on assistant messages produced by an auto-captured run.
     return this.db
       .prepare(
-        'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
+        `SELECT m.*, s.id AS linked_snapshot_id
+         FROM messages m
+         LEFT JOIN project_snapshots s ON s.message_id = m.id
+         WHERE m.session_id = ?
+         ORDER BY m.created_at ASC
+         LIMIT ?`
       )
-      .all(sessionId, limit) as Message[];
+      .all(sessionId, limit) as MessageWithSnapshot[];
   }
 }

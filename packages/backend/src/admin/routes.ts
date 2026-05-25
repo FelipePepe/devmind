@@ -3,10 +3,16 @@ import { authMiddleware, adminMiddleware } from '../auth/middleware.js';
 import type { UsersRepo } from '../db/repos/users.js';
 import type { JobsRepo } from '../db/repos/jobs.js';
 import type { SettingsRepo } from '../db/repos/settings.js';
+import type { ProjectSnapshotsRepo } from '../db/repos/project-snapshots.js';
 import type { HonoEnv } from '../types.js';
 import { OllamaClient } from '../ollama/client.js';
 
-export function createAdminRouter(users: UsersRepo, jobs: JobsRepo, settings: SettingsRepo): Hono<HonoEnv> {
+export function createAdminRouter(
+  users: UsersRepo,
+  jobs: JobsRepo,
+  settings: SettingsRepo,
+  projectSnapshots: ProjectSnapshotsRepo
+): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
 
   router.get('/users', authMiddleware, adminMiddleware, (c) => {
@@ -35,6 +41,11 @@ export function createAdminRouter(users: UsersRepo, jobs: JobsRepo, settings: Se
     const client = new OllamaClient(baseUrl);
     const ok = await client.health();
     return c.json({ ok, baseUrl });
+  });
+
+  router.post('/snapshots/compact', authMiddleware, adminMiddleware, (c) => {
+    const result = projectSnapshots.compactBlobs();
+    return c.json(result);
   });
 
   return router;
