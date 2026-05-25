@@ -74,6 +74,7 @@ export const vectorSearchTool: ToolDef = {
   name: 'vector_search',
   description:
     'Search the indexed codebase using semantic similarity. Returns the most relevant code chunks matching the query.',
+  safety: 'read',
   parameters: {
     type: 'object',
     required: ['query'],

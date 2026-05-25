@@ -4,6 +4,7 @@ import type { UsersRepo } from '../db/repos/users.js';
 import type { JobsRepo } from '../db/repos/jobs.js';
 import type { SettingsRepo } from '../db/repos/settings.js';
 import type { ProjectSnapshotsRepo } from '../db/repos/project-snapshots.js';
+import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
 import type { HonoEnv } from '../types.js';
 import { OllamaClient } from '../ollama/client.js';
 
@@ -11,7 +12,8 @@ export function createAdminRouter(
   users: UsersRepo,
   jobs: JobsRepo,
   settings: SettingsRepo,
-  projectSnapshots: ProjectSnapshotsRepo
+  projectSnapshots: ProjectSnapshotsRepo,
+  toolAudit: ToolCallAuditRepo
 ): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
 
@@ -46,6 +48,12 @@ export function createAdminRouter(
   router.post('/snapshots/compact', authMiddleware, adminMiddleware, (c) => {
     const result = projectSnapshots.compactBlobs();
     return c.json(result);
+  });
+
+  router.get('/tool-audit', authMiddleware, adminMiddleware, (c) => {
+    const limitRaw = Number.parseInt(c.req.query('limit') ?? '100', 10);
+    const limit = Number.isFinite(limitRaw) ? limitRaw : 100;
+    return c.json(toolAudit.findRecent(limit));
   });
 
   return router;

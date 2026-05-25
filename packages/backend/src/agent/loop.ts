@@ -5,6 +5,8 @@ import type { ToolRegistry } from '../tools/registry.js';
 import type { ToolContext } from '../tools/types.js';
 import type { ToolResult } from '../tools/executor.js';
 import type { OllamaMessage, ChatStreamParams } from '../ollama/types.js';
+import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
+import type { FlagsRepo } from '../db/repos/flags.js';
 
 const MAX_ITERATIONS = 8;
 
@@ -28,6 +30,9 @@ export interface AgentLoopOptions {
   registry: ToolRegistry;
   ctx: ToolContext;
   callbacks: AgentCallbacks;
+  // Spec 006 — passed through to ToolExecutor for audit log + autonomy gate.
+  toolAudit?: ToolCallAuditRepo;
+  flags?: FlagsRepo;
 }
 
 /**
@@ -37,8 +42,8 @@ export interface AgentLoopOptions {
  * 3. If finish_reason === stop (or max iterations reached) → done
  */
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
-  const { model, registry, ctx, callbacks } = opts;
-  const executor = new ToolExecutor(registry);
+  const { model, registry, ctx, callbacks, toolAudit, flags } = opts;
+  const executor = new ToolExecutor(registry, toolAudit, flags);
   const tools = registry.getOllamaTools();
 
   const messages: OllamaMessage[] = [...opts.messages];

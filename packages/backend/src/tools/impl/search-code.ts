@@ -24,6 +24,7 @@ function runRipgrep(args: string[], cwd: string, signal?: AbortSignal): Promise<
 export const searchCodeTool: ToolDef = {
   name: 'search_code',
   description: 'Search for a pattern in source files using ripgrep. Returns matching lines with file:line context.',
+  safety: 'read',
   parameters: {
     type: 'object',
     required: ['pattern'],

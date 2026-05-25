@@ -135,20 +135,7 @@ Ver [`DESIGN.md`](./DESIGN.md) — fuente de verdad del sistema de tokens visual
 | **Versionado de proyectos** | ✅ | Snapshots con blob-dedup, timeline parent-linked, diff modal, retention, auto-capture en agent loop, revert por mensaje (spec 004) |
 | Indexación semántica (HNSW) | ✅ | Embeddings Ollama, búsqueda vectorial |
 | Workers — jobs reales de generación | ✅ | Generación manifest-aware, materialización en workspace, validación y rebuild preview |
-| Seguridad y gobierno de tools | ⚠️ Parcial | Sandbox FS por `workspaceRoot` + allowlist de comandos en `run-command`; faltan audit log, niveles de autonomía y validación Zod estricta |
-| Tests, CI, release | ⚠️ Parcial | `pnpm -r build` en CI por PR/push a `develop`/`main`; faltan lint, typecheck explícito y tests |
-
-## SDD changes
-
-Cambios versionados bajo `openspec/changes/`. Ver `openspec/changes/archive/` para los cerrados.
-
-| Change | Estado | Resumen |
-|---|---|---|
-| `001-frontend-rearchitecture` | ✅ Archived | `App.tsx` 419→36 líneas, Zustand stores, tipos centralizados |
-| `002-project-first-builder` | ✅ Archived | Transición a project-first, studio runtime, builder con preview |
-| `002-fase-6-vector-search` | ✅ Archived (2026-05-01) | HNSW + embeddings Ollama + tool `vector_search` |
-| `003-full-stack-project-generator` | ✅ Merged (PR #3) | Generador full-stack, password+MFA auth, migraciones 002–017 |
-| `004-project-versioning` | ✅ Merged (PRs #5 + #6) | Snapshots versionados, blob dedup, parent-linked timeline, diff modal, auto-capture, revert por mensaje |
-| `005-playwright-validation` | 📝 Draft | Tests como evidencia de cada agent run (consume el hook `screenshot_blob_hash` ya emitido por 004) |
+| Seguridad y gobierno de tools | ✅ | Audit log de tool calls (`tool_call_audit`), clasificación safety (read/write/destructive), validación Zod estricta en tools `write`+`destructive`, gate global `tools.autonomy_level=block-destructive`, `GET /admin/tool-audit` (spec 006) |
+| Tests, CI, release | 🔲 | |
 
 Ver [`RECOVERY_PLAN.md`](./RECOVERY_PLAN.md) para el contexto histórico de la migración.
