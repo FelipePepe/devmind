@@ -34,6 +34,7 @@ import { ProjectDbSchemasRepo, ProjectDbMigrationsRepo } from './db/repos/projec
 import { ProjectEnvVarsRepo } from './db/repos/project-env-vars.js';
 import { ProjectValidationReportsRepo, ProjectRuntimeInstancesRepo } from './db/repos/project-validation-runtime.js';
 import { ProjectSnapshotsRepo } from './db/repos/project-snapshots.js';
+import { ProjectSnapshotBlobsRepo } from './db/repos/project-snapshot-blobs.js';
 
 import { StorageService } from './storage/storage.js';
 import { FlagsService } from './flags/flags.js';
@@ -85,7 +86,8 @@ async function start(): Promise<void> {
   const projectEnvVars = new ProjectEnvVarsRepo(db);
   const projectValidationReports = new ProjectValidationReportsRepo(db);
   const projectRuntimeInstances = new ProjectRuntimeInstancesRepo(db);
-  const projectSnapshots = new ProjectSnapshotsRepo(db);
+  const projectSnapshotBlobs = new ProjectSnapshotBlobsRepo(db);
+  const projectSnapshots = new ProjectSnapshotsRepo(db, projectSnapshotBlobs, flags);
 
   settingsRepo.seed('ollama.base_url', config.OLLAMA_BASE_URL, 'Ollama server base URL');
   settingsRepo.seed('ollama.coding_model', config.OLLAMA_CODING_MODEL, 'Model for code generation tasks');
@@ -181,6 +183,7 @@ async function start(): Promise<void> {
       projectValidationReports,
       projectRuntimeInstances,
       projectSnapshots,
+      projectSnapshotBlobs,
       queue
     )
   );
