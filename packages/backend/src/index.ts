@@ -130,7 +130,7 @@ async function start(): Promise<void> {
   app.route('/auth', createAuthRouter(users, challenges, wsManager));
   app.route('/api/artifacts', createStorageRouter(storage));
   app.route('/', createFlagsRouter(flagsService));
-  app.route('/admin', createAdminRouter(users, jobs, settingsRepo));
+  app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots));
   app.route('/api/sessions', createSessionsRouter(sessions, messages));
   app.route('/api/chat', createChatRouter({
     sessions,
