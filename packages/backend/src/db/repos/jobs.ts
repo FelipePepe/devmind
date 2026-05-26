@@ -14,6 +14,13 @@ export interface Job {
   error: string | null;
 }
 
+export interface JobQueueStats {
+  pending: number;
+  processing: number;
+  failed: number;
+  oldestPendingAgeMs: number;
+}
+
 const MAX_RETRIES = 3;
 
 export class JobsRepo {
@@ -83,11 +90,13 @@ export class JobsRepo {
   }
 
   markFailed(id: string, error: string): void {
+    const job = this.getJob(id);
     this.db
       .prepare(
         `UPDATE job_queue SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`
       )
       .run(error, new Date().toISOString(), id);
+    if (job) this.insertDeadLetter(job, error);
   }
 
   getJob(id: string): Job | undefined {
@@ -98,5 +107,41 @@ export class JobsRepo {
     return this.db
       .prepare('SELECT * FROM job_queue ORDER BY created_at DESC')
       .all() as Job[];
+  }
+
+  stats(): JobQueueStats {
+    const counts = this.db
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+           SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+         FROM job_queue`
+      )
+      .get() as { pending: number | null; processing: number | null; failed: number | null };
+
+    const lag = this.db
+      .prepare(
+        `SELECT CAST(COALESCE((julianday('now') - julianday(MIN(created_at))) * 86400000, 0) AS INTEGER) AS lag_ms
+         FROM job_queue
+         WHERE status = 'pending'`
+      )
+      .get() as { lag_ms: number | null };
+
+    return {
+      pending: counts.pending ?? 0,
+      processing: counts.processing ?? 0,
+      failed: counts.failed ?? 0,
+      oldestPendingAgeMs: lag.lag_ms ?? 0,
+    };
+  }
+
+  private insertDeadLetter(job: Job, error: string): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO dead_letter_jobs (job_id, type, payload, retry_count, error)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(job.id, job.type, job.payload, job.retry_count, error);
   }
 }

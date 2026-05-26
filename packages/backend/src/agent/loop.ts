@@ -83,25 +83,44 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       return;
     }
 
-    // Append assistant turn
+    // Append assistant turn. We stringify tool args in normalizeToolCall so
+    // the executor can JSON.parse them, but some Ollama models (qwen3.6) reject
+    // the string form when it shows up again in the conversation history —
+    // they expect tool_call.function.arguments to be the original JSON object.
+    // Re-parse here so the wire format matches what the model emitted.
     const assistantMsg: OllamaMessage = {
       role: 'assistant',
       content: assistantContent,
       ...(pendingToolCalls.length > 0
         ? {
-            tool_calls: pendingToolCalls.map((tc) => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: { name: tc.name, arguments: tc.args },
-            })),
+            tool_calls: pendingToolCalls.map((tc) => {
+              let argsForWire: unknown = tc.args;
+              try {
+                argsForWire = JSON.parse(tc.args);
+              } catch {
+                // Keep the raw string if it's not valid JSON; Ollama will surface
+                // a clearer error than we could here.
+              }
+              return {
+                id: tc.id,
+                type: 'function' as const,
+                function: { name: tc.name, arguments: argsForWire as string },
+              };
+            }),
           }
         : {}),
     };
     messages.push(assistantMsg);
 
-    if (finishReason !== 'tool_calls' || pendingToolCalls.length === 0) {
+    // Some models (e.g. qwen3.6) emit tool_call chunks but finish with
+    // reason 'stop' instead of 'tool_calls'. Execute pending tools whenever
+    // they exist; only finish when there are genuinely no tools to run.
+    if (pendingToolCalls.length === 0) {
       await callbacks.onDone(iteration + 1);
       return;
+    }
+    if (finishReason && finishReason !== 'tool_calls') {
+      logger.warn({ finishReason, pendingCount: pendingToolCalls.length, iteration }, 'Agent loop: executing tool calls despite non-tool finish_reason');
     }
 
     // Execute all tool calls and append results

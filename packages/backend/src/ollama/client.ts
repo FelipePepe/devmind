@@ -31,6 +31,20 @@ export class OllamaClient {
     }
   }
 
+  async listModels(): Promise<Array<{ name: string; size?: number; parameter_size?: string; family?: string }>> {
+    const res = await fetch(`${this.baseUrl}/api/tags`);
+    if (!res.ok) {
+      throw new Error(`Ollama listModels ${res.status}: ${await res.text()}`);
+    }
+    const data = (await res.json()) as { models?: Array<{ name: string; size?: number; details?: { parameter_size?: string; family?: string } }> };
+    return (data.models ?? []).map((m) => ({
+      name: m.name,
+      ...(m.size !== undefined ? { size: m.size } : {}),
+      ...(m.details?.parameter_size ? { parameter_size: m.details.parameter_size } : {}),
+      ...(m.details?.family ? { family: m.details.family } : {}),
+    }));
+  }
+
   async chat(params: ChatParams): Promise<ChatResponse> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
@@ -91,7 +105,7 @@ export class OllamaClient {
             const toolCalls = chunk.message.tool_calls;
             if (toolCalls?.length) {
               for (const tc of toolCalls) {
-                yield { type: 'tool_call', tool_call: tc };
+                yield { type: 'tool_call', tool_call: normalizeToolCall(tc) };
               }
             } else if (chunk.message.content) {
               yield { type: 'text', content: chunk.message.content };
@@ -101,7 +115,7 @@ export class OllamaClient {
             const toolCalls = chunk.message.tool_calls;
             if (toolCalls?.length) {
               for (const tc of toolCalls) {
-                yield { type: 'tool_call', tool_call: tc };
+                yield { type: 'tool_call', tool_call: normalizeToolCall(tc) };
               }
             }
             yield {
@@ -131,3 +145,20 @@ export class OllamaClient {
 }
 
 export const ollamaClient = new OllamaClient();
+
+/**
+ * The Ollama spec says tool_call.function.arguments is a JSON string, but some
+ * models (e.g. qwen3.6:35b) return it as a JSON object. Normalize so downstream
+ * code can always `JSON.parse` the arguments field.
+ */
+function normalizeToolCall(tc: OllamaToolCall): OllamaToolCall {
+  const args = tc.function.arguments as unknown;
+  if (typeof args === 'string') return tc;
+  return {
+    ...tc,
+    function: {
+      ...tc.function,
+      arguments: JSON.stringify(args ?? {}),
+    },
+  };
+}

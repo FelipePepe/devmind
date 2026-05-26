@@ -8,7 +8,7 @@ import { z } from 'zod';
 //   DB_PATH             — Path to SQLite database file (default below)
 // Run: infisical run -- node dist/index.js
 
-const ConfigSchema = z.object({
+const rawConfigSchema = z.object({
   PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
@@ -29,6 +29,11 @@ const ConfigSchema = z.object({
   ALLOWED_SHELL_COMMANDS: z
     .string()
     .default('git,npm,pnpm,node,tsc,eslint,jest,vitest'),
+  PUBLIC_ORIGIN: z.string().url().default('http://localhost:5001'),
+  CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:5173,http://localhost:5001'),
+  COOKIE_SECURE: z.coerce.boolean().optional(),
+  TRUST_PROXY: z.coerce.boolean().default(false),
+  HEALTHCHECK_OLLAMA_TIMEOUT_MS: z.coerce.number().default(1_500),
 
   // Database
   DB_PATH: z.string().default('./data/devmind.db'),
@@ -59,6 +64,68 @@ const ConfigSchema = z.object({
   WEBAUTHN_RP_ID: z.string().default('devmind.casa'),
   WEBAUTHN_RP_NAME: z.string().default('DevMind'),
   WEBAUTHN_DISABLED: z.coerce.boolean().default(true),
+
+  // OIDC / Keycloak (008-keycloak-oidc)
+  AUTH_LOCAL_ENABLED: z.coerce.boolean().default(true),
+  OIDC_ISSUER: z.string().default(''),
+  OIDC_CLIENT_ID_FRONTEND: z.string().default('devmind-frontend'),
+  OIDC_CLIENT_ID_BACKEND: z.string().default('devmind-backend'),
+  OIDC_CLIENT_SECRET_BACKEND: z.string().default(''),
+  OIDC_REDIRECT_URI: z.string().default(''),
+  OIDC_POST_LOGOUT_REDIRECT: z.string().default(''),
+  OIDC_JWKS_CACHE_TTL_MS: z.coerce.number().default(3_600_000),
+  OIDC_ADMIN_ROLE: z.string().default('admin'),
+});
+
+const PLACEHOLDER_SECRETS = new Set(['changeme', 'change-me', 'dev-secret', 'secret', 'password']);
+
+const ConfigSchema = rawConfigSchema.superRefine((cfg, ctx) => {
+  if (cfg.NODE_ENV !== 'production') return;
+
+  if (PLACEHOLDER_SECRETS.has(cfg.JWT_SECRET.toLowerCase())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_SECRET'],
+      message: 'JWT_SECRET must not use a known placeholder in production',
+    });
+  }
+
+  for (const key of ['DB_PATH', 'STORAGE_BASE_PATH', 'WORKSPACE_ROOT', 'VECTOR_DB_PATH'] as const) {
+    if (!cfg[key].startsWith('/')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} must be an absolute path in production`,
+      });
+    }
+  }
+
+  const origins = cfg.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean);
+  if (origins.length === 0 || origins.some((origin) => origin === '*')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['CORS_ALLOWED_ORIGINS'],
+      message: 'CORS_ALLOWED_ORIGINS must list explicit origins in production',
+    });
+  }
+
+  // When OIDC is configured, redirect URIs must be present too.
+  if (cfg.OIDC_ISSUER && !cfg.OIDC_REDIRECT_URI) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OIDC_REDIRECT_URI'],
+      message: 'OIDC_REDIRECT_URI is required when OIDC_ISSUER is set',
+    });
+  }
+
+  // After cleanup, AUTH_LOCAL_ENABLED=false must imply OIDC configured.
+  if (!cfg.AUTH_LOCAL_ENABLED && !cfg.OIDC_ISSUER) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OIDC_ISSUER'],
+      message: 'OIDC_ISSUER is required when AUTH_LOCAL_ENABLED=false',
+    });
+  }
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

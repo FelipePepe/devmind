@@ -1,0 +1,12 @@
+.git
+node_modules
+.pnpm-store
+packages/*/node_modules
+packages/*/dist
+packages/*/data
+.scannerwork
+data
+backups
+workspace
+.env
+*.log

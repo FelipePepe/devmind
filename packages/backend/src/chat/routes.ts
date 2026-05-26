@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { authMiddleware } from '../auth/middleware.js';
+import { rateLimitMiddleware } from '../auth/rate-limit.js';
 import { runAgentLoop } from '../agent/loop.js';
 import { createToolRegistry } from '../tools/index.js';
 import { config } from '../config.js';
@@ -171,7 +172,11 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 - For multi-page apps, generate all HTML files and link them together
 - If the project has no files yet and the user asks to build something, create the first working version immediately
 - If the current prompt is generic, choose a polished starter app and implement it immediately
-- Default to maintainable modular code organization even for small apps`;
+- Default to maintainable modular code organization even for small apps
+
+## Language
+- Always reply in the same language the user is writing in. If the user writes in Spanish, reply in Spanish; if in English, reply in English; and so on for any other language.
+- This applies only to your conversational reply text. Code, file names, identifiers, and tool arguments must stay in their natural language (typically English) regardless of the conversation language.`;
 
   return prompt;
 }
@@ -212,7 +217,7 @@ export interface ChatRouterDeps {
 export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
 
-  router.post('/', authMiddleware, async (c) => {
+  router.post('/', rateLimitMiddleware, authMiddleware, async (c) => {
     const userId = c.get('userId');
 
     const bodyRaw = await c.req.json<unknown>().catch(() => null);
