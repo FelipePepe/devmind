@@ -82,6 +82,48 @@ export interface ApiClient {
 }
 
 /**
+ * Register a user end-to-end via the HTTP API. No browser, no UI. Returns the
+ * generated credentials AND a ready-to-use ApiClient bound to the access token
+ * the confirm step returned. Useful when a single test needs more than one
+ * user (e.g. checking cross-user isolation).
+ */
+export async function apiRegister(
+  request: APIRequestContext,
+  options: { username?: string; password?: string; displayName?: string } = {}
+): Promise<{ username: string; password: string; secret: string; client: ApiClient }> {
+  const username = options.username ?? uniqueUsername();
+  const password = options.password ?? STRONG_PASSWORD;
+  const displayName = options.displayName ?? username;
+
+  // Per-test pseudo-IP so the in-memory auth rate-limit bucket doesn't collide
+  // across the whole test suite. The backend honors X-Forwarded-For; in prod
+  // this header comes from the reverse proxy. In local e2e we synthesize it
+  // ourselves so each test gets its own bucket.
+  const xff = `e2e-${Math.random().toString(36).slice(2, 10)}`;
+  const headers = { 'X-Forwarded-For': xff };
+
+  const reg = await request.post('/auth/register', {
+    headers,
+    data: { username, displayName, password },
+  });
+  if (!reg.ok()) throw new Error(`apiRegister step1 failed: ${reg.status()} ${await reg.text()}`);
+  const { totpSecret: secret, confirmToken } = (await reg.json()) as {
+    totpSecret: string;
+    confirmToken: string;
+  };
+
+  const code = totpCode(secret);
+  const confirm = await request.post('/auth/register/confirm', {
+    headers,
+    data: { confirmToken, code },
+  });
+  if (!confirm.ok()) throw new Error(`apiRegister step2 failed: ${confirm.status()} ${await confirm.text()}`);
+  const { accessToken } = (await confirm.json()) as { accessToken: string };
+
+  return { username, password, secret, client: { request, accessToken } };
+}
+
+/**
  * Authenticate via the backend HTTP API directly (no browser). Useful for
  * fixtures that need to seed DB state (create project, etc.).
  */

@@ -955,10 +955,10 @@ export function createBuilderRouter(
     })));
   });
 
-  router.get('/projects/:id/files/*', authMiddleware, (c) => {
+  router.get('/projects/:id/files/:path{.+}', authMiddleware, (c) => {
     const userId = c.get('userId');
     const projectId = c.req.param('id');
-    const filePath = c.req.param('*');
+    const filePath = c.req.param('path');
     if (!projectId || !filePath) return c.json({ error: 'Missing id or path' }, 400);
     const project = projects.findById(userId, projectId);
     if (!project) return c.json({ error: 'Project not found' }, 404);
@@ -967,10 +967,10 @@ export function createBuilderRouter(
     return c.json(file);
   });
 
-  router.put('/projects/:id/files/*', authMiddleware, async (c) => {
+  router.put('/projects/:id/files/:path{.+}', authMiddleware, async (c) => {
     const userId = c.get('userId');
     const projectId = c.req.param('id');
-    const filePath = c.req.param('*');
+    const filePath = c.req.param('path');
     if (!projectId || !filePath) return c.json({ error: 'Missing id or path' }, 400);
     const project = projects.findById(userId, projectId);
     if (!project) return c.json({ error: 'Project not found' }, 404);
@@ -980,10 +980,10 @@ export function createBuilderRouter(
     return c.json(file);
   });
 
-  router.delete('/projects/:id/files/*', authMiddleware, (c) => {
+  router.delete('/projects/:id/files/:path{.+}', authMiddleware, (c) => {
     const userId = c.get('userId');
     const projectId = c.req.param('id');
-    const filePath = c.req.param('*');
+    const filePath = c.req.param('path');
     if (!projectId || !filePath) return c.json({ error: 'Missing id or path' }, 400);
     const project = projects.findById(userId, projectId);
     if (!project) return c.json({ error: 'Project not found' }, 404);
@@ -1051,9 +1051,9 @@ export function createBuilderRouter(
   });
 
   // Preview serve — serves generated files as static assets (no auth: iframe-friendly)
-  router.get('/projects/:id/preview/serve/*', (c) => {
+  router.get('/projects/:id/preview/serve/:path{.*}', (c) => {
     const projectId = c.req.param('id');
-    const filePath = c.req.param('*') || 'index.html';
+    const filePath = c.req.param('path') || 'index.html';
     if (!projectId) return c.text('Missing id', 400);
     if (!verifyPreviewTicket(projectId, c.req.query('exp'), c.req.query('sig'))) {
       return c.text('Invalid or expired preview ticket', 401);
