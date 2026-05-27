@@ -1,13 +1,16 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { hashPassword, verifyPassword } from './password.js';
+import { validatePasswordPolicy } from './password-policy.js';
 import { generateTotpSetup, verifyTotpCode } from './totp.js';
 import { sign, verifyRefresh } from './jwt.js';
 import { authMiddleware } from './middleware.js';
 import { rateLimitMiddleware } from './rate-limit.js';
 import { logger } from '../logger.js';
+import { config } from '../config.js';
 import type { UsersRepo } from '../db/repos/users.js';
 import type { ChallengesRepo } from '../db/repos/challenges.js';
+import type { RefreshTokensRepo } from '../db/repos/refresh-tokens.js';
 import type { WsManager } from '../realtime/ws-manager.js';
 import type { HonoEnv } from '../types.js';
 import type { User } from '../db/repos/users.js';
@@ -20,6 +23,8 @@ interface AuthUserResponse {
   display_name: string;
   username: string;
   is_admin: number;
+  kc_subject: string | null;
+  email: string | null;
 }
 
 function toAuthUser(user: User): AuthUserResponse {
@@ -28,7 +33,22 @@ function toAuthUser(user: User): AuthUserResponse {
     display_name: user.display_name,
     username: user.username,
     is_admin: user.is_admin,
+    kc_subject: user.kc_subject,
+    email: user.email,
   };
+}
+
+async function enforceLocalAuthEnabled(
+  c: Parameters<Parameters<Hono<HonoEnv>['use']>[1]>[0],
+  next: () => Promise<void>
+): Promise<Response | void> {
+  if (!config.AUTH_LOCAL_ENABLED) {
+    return c.json(
+      { error: 'Local authentication is disabled; use OIDC.', code: 'LOCAL_AUTH_DISABLED' },
+      410
+    );
+  }
+  await next();
 }
 
 function makeToken(): string {
@@ -40,17 +60,41 @@ function issueRefreshCookie(c: Parameters<typeof setCookie>[0], refreshToken: st
     httpOnly: true,
     sameSite: 'Strict',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60,
-    secure: false, // set true when behind HTTPS
+    maxAge: Math.floor(config.JWT_REFRESH_TTL_MS / 1000),
+    secure: config.COOKIE_SECURE ?? (config.NODE_ENV === 'production'),
   });
+}
+
+async function issueTokenPair(
+  c: Parameters<typeof setCookie>[0],
+  refreshTokens: RefreshTokensRepo,
+  userId: string,
+  isAdmin: boolean
+): Promise<string> {
+  const { accessToken, refreshToken } = await sign(userId, isAdmin);
+  refreshTokens.create(
+    userId,
+    refreshToken,
+    new Date(Date.now() + config.JWT_REFRESH_TTL_MS).toISOString()
+  );
+  issueRefreshCookie(c, refreshToken);
+  return accessToken;
 }
 
 export function createAuthRouter(
   users: UsersRepo,
   challenges: ChallengesRepo,
-  wsManager: WsManager
+  wsManager: WsManager,
+  refreshTokens: RefreshTokensRepo
 ): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
+
+  // Gate every local auth endpoint behind AUTH_LOCAL_ENABLED.
+  router.use('/login', enforceLocalAuthEnabled);
+  router.use('/login/*', enforceLocalAuthEnabled);
+  router.use('/register', enforceLocalAuthEnabled);
+  router.use('/register/*', enforceLocalAuthEnabled);
+  router.use('/refresh', enforceLocalAuthEnabled);
 
   // ── Register ─────────────────────────────────────────────────────────────
   // Step 1: create user + return TOTP setup info
@@ -61,8 +105,9 @@ export function createAuthRouter(
     if (!username || !password) {
       return c.json({ error: 'username and password are required' }, 400);
     }
-    if (password.length < 8) {
-      return c.json({ error: 'password must be at least 8 characters' }, 400);
+    const passwordPolicy = validatePasswordPolicy(password);
+    if (!passwordPolicy.ok) {
+      return c.json({ error: 'Password policy failed', details: passwordPolicy.errors }, 400);
     }
     if (users.findByUsername(username)) {
       logger.warn({ username }, 'Auth: register failed - username taken');
@@ -97,22 +142,25 @@ export function createAuthRouter(
     }
 
     const row = challenges.findByChallenge(confirmToken);
-    if (row) challenges.deleteByChallenge(confirmToken);
 
     if (!row || row.type !== 'register_confirm' || new Date(row.expires_at) < new Date()) {
+      if (row) challenges.deleteByChallenge(confirmToken);
       return c.json({ error: 'Invalid or expired confirmation token' }, 400);
     }
 
     const user = users.findById(row.user_id!);
-    if (!user) return c.json({ error: 'User not found' }, 404);
+    if (!user) {
+      challenges.deleteByChallenge(confirmToken);
+      return c.json({ error: 'User not found' }, 404);
+    }
 
     if (!verifyTotpCode(user.totp_secret!, code)) {
       return c.json({ error: 'Invalid TOTP code' }, 401);
     }
 
+    challenges.deleteByChallenge(confirmToken);
     users.confirmTotp(user.id);
-    const { accessToken, refreshToken } = await sign(user.id, user.is_admin === 1);
-    issueRefreshCookie(c, refreshToken);
+    const accessToken = await issueTokenPair(c, refreshTokens, user.id, user.is_admin === 1);
     return c.json({ accessToken, user: toAuthUser(user) });
   });
 
@@ -160,22 +208,26 @@ export function createAuthRouter(
     }
 
     const row = challenges.findByChallenge(mfaToken);
-    if (row) challenges.deleteByChallenge(mfaToken);
 
     if (!row || row.type !== 'mfa_login' || new Date(row.expires_at) < new Date()) {
+      if (row) challenges.deleteByChallenge(mfaToken);
       return c.json({ error: 'Invalid or expired MFA token' }, 401);
     }
 
     const user = users.findById(row.user_id!);
-    if (!user) return c.json({ error: 'User not found' }, 404);
+    if (!user) {
+      challenges.deleteByChallenge(mfaToken);
+      return c.json({ error: 'User not found' }, 404);
+    }
 
     if (!verifyTotpCode(user.totp_secret!, code)) {
       logger.warn({ userId: user.id }, 'Auth: MFA code invalid');
       return c.json({ error: 'Invalid TOTP code' }, 401);
     }
 
-    const { accessToken, refreshToken } = await sign(user.id, user.is_admin === 1);
-    issueRefreshCookie(c, refreshToken);
+    challenges.deleteByChallenge(mfaToken);
+
+    const accessToken = await issueTokenPair(c, refreshTokens, user.id, user.is_admin === 1);
     logger.info({ userId: user.id }, 'Auth: login complete (MFA verified)');
     return c.json({ accessToken, user: toAuthUser(user) });
   });
@@ -189,10 +241,15 @@ export function createAuthRouter(
     }
     try {
       const { userId } = await verifyRefresh(refreshToken);
+      const activeRefresh = refreshTokens.findActiveByToken(refreshToken);
+      if (!activeRefresh || activeRefresh.user_id !== userId) {
+        logger.warn({ userId }, 'Auth: refresh failed - token revoked or reused');
+        return c.json({ error: 'Invalid refresh token' }, 401);
+      }
       const user = users.findById(userId);
       if (!user) return c.json({ error: 'User not found' }, 401);
-      const { accessToken, refreshToken: newRefresh } = await sign(userId, user.is_admin === 1);
-      issueRefreshCookie(c, newRefresh);
+      refreshTokens.revokeToken(refreshToken, 'rotated');
+      const accessToken = await issueTokenPair(c, refreshTokens, userId, user.is_admin === 1);
       logger.info({ userId }, 'Auth: token refreshed');
       return c.json({ accessToken, user: toAuthUser(user) });
     } catch {
@@ -210,6 +267,8 @@ export function createAuthRouter(
 
   router.delete('/logout', authMiddleware, (c) => {
     const userId = c.get('userId');
+    const refreshToken = getCookie(c, REFRESH_COOKIE);
+    if (refreshToken) refreshTokens.revokeToken(refreshToken, 'logout');
     deleteCookie(c, REFRESH_COOKIE, { path: '/' });
     logger.info({ userId }, 'Auth: logout');
     return c.json({ ok: true });

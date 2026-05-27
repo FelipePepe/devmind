@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { type ReactNode } from 'react';
 import { TopBar } from './TopBar.js';
 import { LogPanel } from './LogPanel.js';
+import { MigrationBanner } from './MigrationBanner.js';
 import { useAuthStore } from '../../stores/auth.js';
 import { useLogStore } from '../../stores/log.js';
 import Chat from '../../pages/Chat.js';
@@ -19,6 +20,12 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthRoute({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 export default function AppLayout() {
   const isLogOpen = useLogStore((s) => s.isOpen);
   const logHeight = useLogStore((s) => s.height);
@@ -31,6 +38,7 @@ export default function AppLayout() {
       }}
     >
       <TopBar />
+      <MigrationBanner />
       <Routes>
         <Route path="/" element={<Navigate to="/projects" replace />} />
         <Route path="/projects" element={<Projects />} />
@@ -39,7 +47,7 @@ export default function AppLayout() {
         <Route path="/admin/flags" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><FlagsAdmin /></div></AdminRoute>} />
         <Route path="/admin/users" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><UsersAdmin /></div></AdminRoute>} />
         <Route path="/admin/jobs" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><JobsAdmin /></div></AdminRoute>} />
-        <Route path="/admin/ollama" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><OllamaSettings /></div></AdminRoute>} />
+        <Route path="/admin/ollama" element={<AuthRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><OllamaSettings /></div></AuthRoute>} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
       <LogPanel />

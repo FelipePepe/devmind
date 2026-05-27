@@ -25,11 +25,13 @@ export function createAdminRouter(
     return c.json(jobs.list());
   });
 
-  router.get('/settings', authMiddleware, adminMiddleware, (c) => {
+  // Settings are intentionally accessible to any authenticated user so anyone
+  // can switch the active Ollama model. Other admin endpoints stay gated.
+  router.get('/settings', authMiddleware, (c) => {
     return c.json(settings.list());
   });
 
-  router.patch('/settings/:key', authMiddleware, adminMiddleware, async (c) => {
+  router.patch('/settings/:key', authMiddleware, async (c) => {
     const key = c.req.param('key');
     if (!key) return c.json({ error: 'missing key' }, 400);
     const { value } = await c.req.json<{ value: string }>();
@@ -38,11 +40,22 @@ export function createAdminRouter(
     return c.json({ ok: true });
   });
 
-  router.get('/settings/ollama/health', authMiddleware, adminMiddleware, async (c) => {
+  router.get('/settings/ollama/health', authMiddleware, async (c) => {
     const baseUrl = settings.get('ollama.base_url') ?? 'http://localhost:11434';
     const client = new OllamaClient(baseUrl);
     const ok = await client.health();
     return c.json({ ok, baseUrl });
+  });
+
+  router.get('/settings/ollama/models', authMiddleware, async (c) => {
+    const baseUrl = settings.get('ollama.base_url') ?? 'http://localhost:11434';
+    const client = new OllamaClient(baseUrl);
+    try {
+      const models = await client.listModels();
+      return c.json({ baseUrl, models });
+    } catch (err) {
+      return c.json({ baseUrl, models: [], error: err instanceof Error ? err.message : String(err) }, 502);
+    }
   });
 
   router.post('/snapshots/compact', authMiddleware, adminMiddleware, (c) => {
@@ -54,6 +67,28 @@ export function createAdminRouter(
     const limitRaw = Number.parseInt(c.req.query('limit') ?? '100', 10);
     const limit = Number.isFinite(limitRaw) ? limitRaw : 100;
     return c.json(toolAudit.findRecent(limit));
+  });
+
+  // Manual linking — resolves cases where an OIDC subject and a local user
+  // share an identity but not an email (or first OIDC login created a fresh
+  // user before the legacy account was migrated). Admin-only.
+  router.post('/auth/link', authMiddleware, adminMiddleware, async (c) => {
+    const body = await c.req.json<{ user_id?: string; kc_subject?: string; email?: string }>();
+    const { user_id, kc_subject, email } = body;
+    if (!user_id || !kc_subject) {
+      return c.json({ error: 'user_id and kc_subject are required' }, 400);
+    }
+    const user = users.findById(user_id);
+    if (!user) return c.json({ error: 'User not found' }, 404);
+    const existing = users.findByKcSubject(kc_subject);
+    if (existing && existing.id !== user_id) {
+      return c.json(
+        { error: 'kc_subject already linked to another user', linked_user_id: existing.id },
+        409
+      );
+    }
+    users.linkKcSubject(user_id, kc_subject, email);
+    return c.json({ ok: true, user: users.findById(user_id) });
   });
 
   return router;

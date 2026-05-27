@@ -28,23 +28,27 @@ export class ProjectSnapshotBlobsRepo {
   }
 
   incrementRef(hashes: string[]): void {
-    if (hashes.length === 0) return;
-    const placeholders = hashes.map(() => '?').join(',');
-    this.db
-      .prepare(
-        `UPDATE project_snapshot_blobs SET ref_count = ref_count + 1 WHERE hash IN (${placeholders})`
-      )
-      .run(...hashes);
+    this.adjustRef(hashes, 1);
   }
 
   decrementRef(hashes: string[]): void {
+    this.adjustRef(hashes, -1);
+  }
+
+  private adjustRef(hashes: string[], delta: number): void {
     if (hashes.length === 0) return;
-    const placeholders = hashes.map(() => '?').join(',');
-    this.db
-      .prepare(
-        `UPDATE project_snapshot_blobs SET ref_count = ref_count - 1 WHERE hash IN (${placeholders})`
-      )
-      .run(...hashes);
+    // Duplicates matter: a single snapshot can list the same blob once, but
+    // prune/compact pass a flat list across multiple snapshots, so [A, A] must
+    // shift A's ref_count by 2 — not 1 as a `WHERE hash IN (?, ?)` UPDATE would.
+    const counts = new Map<string, number>();
+    for (const h of hashes) counts.set(h, (counts.get(h) ?? 0) + 1);
+    const stmt = this.db.prepare(
+      'UPDATE project_snapshot_blobs SET ref_count = ref_count + ? WHERE hash = ?'
+    );
+    const tx = this.db.transaction(() => {
+      for (const [hash, count] of counts) stmt.run(delta * count, hash);
+    });
+    tx();
   }
 
   deleteOrphans(): number {

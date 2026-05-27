@@ -36,6 +36,7 @@ import { ProjectValidationReportsRepo, ProjectRuntimeInstancesRepo } from './db/
 import { ProjectSnapshotsRepo } from './db/repos/project-snapshots.js';
 import { ProjectSnapshotBlobsRepo } from './db/repos/project-snapshot-blobs.js';
 import { ToolCallAuditRepo } from './db/repos/tool-call-audit.js';
+import { RefreshTokensRepo } from './db/repos/refresh-tokens.js';
 
 import { StorageService } from './storage/storage.js';
 import { FlagsService } from './flags/flags.js';
@@ -44,6 +45,7 @@ import { PushService } from './realtime/web-push.js';
 import { JobQueueClient } from './workers/queue.js';
 
 import { createAuthRouter } from './auth/routes.js';
+import { createOidcRouter } from './auth/oidc/routes.js';
 import { createStorageRouter } from './storage/routes.js';
 import { createFlagsRouter } from './flags/routes.js';
 import { createRealtimeRouter } from './realtime/routes.js';
@@ -52,8 +54,30 @@ import { createAdminRouter } from './admin/routes.js';
 import { createChatRouter } from './chat/routes.js';
 import { createWorkspaceRouter } from './workspace/routes.js';
 import { createBuilderRouter } from './builder/routes.js';
-import { authMiddleware } from './auth/middleware.js';
+import { authMiddleware, configureAuthMiddleware } from './auth/middleware.js';
 import { OllamaClient } from './ollama/client.js';
+import { corsMiddleware, securityHeadersMiddleware } from './http/security.js';
+import { MetricsRegistry } from './telemetry/metrics.js';
+
+function normalizeRoute(path: string): string {
+  return path
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id')
+    .replace(/\/[0-9]+(?=\/|$)/g, '/:id');
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 async function start(): Promise<void> {
   await loadSecrets();
@@ -90,6 +114,10 @@ async function start(): Promise<void> {
   const projectSnapshotBlobs = new ProjectSnapshotBlobsRepo(db);
   const projectSnapshots = new ProjectSnapshotsRepo(db, projectSnapshotBlobs, flags);
   const toolAudit = new ToolCallAuditRepo(db);
+  const refreshTokens = new RefreshTokensRepo(db);
+  const metrics = new MetricsRegistry();
+
+  configureAuthMiddleware(users);
 
   settingsRepo.seed('ollama.base_url', config.OLLAMA_BASE_URL, 'Ollama server base URL');
   settingsRepo.seed('ollama.coding_model', config.OLLAMA_CODING_MODEL, 'Model for code generation tasks');
@@ -108,11 +136,16 @@ async function start(): Promise<void> {
 
   const app = new Hono();
 
+  app.use('*', securityHeadersMiddleware);
+  app.use('*', corsMiddleware);
+
   // Global request logging
   app.use('*', async (c, next) => {
     const start = Date.now();
     await next();
     const duration = Date.now() - start;
+    const route = normalizeRoute(new URL(c.req.url).pathname);
+    metrics.recordHttp(c.req.method, route, c.res.status, duration);
     logger.info(
       { method: c.req.method, path: c.req.url, status: c.res.status, duration_ms: duration },
       'HTTP'
@@ -129,7 +162,8 @@ async function start(): Promise<void> {
     );
   });
 
-  app.route('/auth', createAuthRouter(users, challenges, wsManager));
+  app.route('/auth', createAuthRouter(users, challenges, wsManager, refreshTokens));
+  app.route('/auth/oidc', createOidcRouter(users));
   app.route('/api/artifacts', createStorageRouter(storage));
   app.route('/', createFlagsRouter(flagsService));
   app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots, toolAudit));
@@ -165,6 +199,45 @@ async function start(): Promise<void> {
     const ok = await client.health();
     const model = settingsRepo.get('ollama.coding_model') ?? null;
     return c.json({ ok, model: model ?? null, baseUrl });
+  });
+
+  app.get('/api/health', async (c) => {
+    let dbOk = false;
+    try {
+      db.prepare('SELECT 1 AS ok').get();
+      dbOk = true;
+    } catch (err) {
+      logger.error({ err }, 'Healthcheck DB probe failed');
+    }
+
+    const baseUrl = settingsRepo.get('ollama.base_url') ?? config.OLLAMA_BASE_URL;
+    const client = new OllamaClient(baseUrl);
+    const ollamaOk = await withTimeout(
+      client.health(),
+      config.HEALTHCHECK_OLLAMA_TIMEOUT_MS,
+      false
+    );
+    const queueStats = jobs.stats();
+
+    return c.json(
+      {
+        ok: dbOk,
+        db: dbOk ? 'ok' : 'error',
+        ollama: ollamaOk ? 'ok' : 'error',
+        workers: {
+          pending: queueStats.pending,
+          processing: queueStats.processing,
+          failed: queueStats.failed,
+          lag_ms: queueStats.oldestPendingAgeMs,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      dbOk ? 200 : 503
+    );
+  });
+
+  app.get('/api/metrics', (c) => {
+    return c.text(metrics.render(), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
   });
 
   app.route(
@@ -233,12 +306,22 @@ async function start(): Promise<void> {
     }
   );
 
+  let shuttingDown = false;
   function shutdown(): void {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info('Shutting down...');
     wsManager.closeAll();
-    wss.close();
-    closeDb();
-    process.exit(0);
+    wss.close(() => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ err }, 'HTTP server failed to close cleanly');
+          process.exit(1);
+        }
+        closeDb();
+        process.exit(0);
+      });
+    });
   }
 
   process.on('SIGTERM', shutdown);

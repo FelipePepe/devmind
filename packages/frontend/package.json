@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../../node_modules/vite/bin/vite.js",
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node ../../node_modules/vite/bin/vite.js build",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "preview": "node ../../node_modules/vite/bin/vite.js preview"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

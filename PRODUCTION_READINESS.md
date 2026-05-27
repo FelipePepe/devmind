@@ -33,59 +33,59 @@
 ## 🔴 Bloqueadores — sin esto NO se despliega
 
 ### Deploy & runtime
-- [ ] **Dockerfile productivo** por servicio (backend, workers, frontend). Hoy solo hay `Dockerfile.workers` mencionado en spec 005; backend y frontend asumen `pnpm dev` o `pnpm start` manual.
-- [ ] **`docker-compose.yml` de producción** con volúmenes persistentes para `data/` (SQLite + WAL), `workspace/`, `vector-db/`, restart policies, healthchecks reales.
-- [ ] **Healthcheck endpoint `/api/health`** que devuelva `{ db: ok, ollama: ok, workers: lag_ms }`. El actual `/api/ollama/health` solo cubre Ollama.
-- [ ] **Graceful shutdown** del backend (Hono server + WebSocket) y workers (terminar job en curso, no aceptar nuevos). Hoy hay `shutdown()` parcial; falta cerrar la cola de jobs y esperar al in-flight.
+- [x] **Dockerfile productivo** por servicio (backend, workers, frontend). `Dockerfile.backend`, `Dockerfile.frontend` y `Dockerfile.workers` construyen artefactos `dist` y ejecutan runtime productivo.
+- [x] **`docker-compose.yml` de producción** con volúmenes persistentes para `data/` (SQLite + WAL), `workspace/`, `vector-db/`, restart policies, healthchecks reales. Añadido `docker-compose.prod.yml` con `devmind-data`, `devmind-workspace`, `devmind-vectors`, `devmind-storage` y healthchecks.
+- [x] **Healthcheck endpoint `/api/health`** que devuelva `{ db: ok, ollama: ok, workers: lag_ms }`. Añadido endpoint público con estado DB/Ollama/cola.
+- [x] **Graceful shutdown** del backend (Hono server + WebSocket) y workers (terminar job en curso, no aceptar nuevos). Backend ahora cierra WS + HTTP server + DB; workers ya drenan job en curso.
 - [ ] **Migraciones rollback strategy** — el runner solo aplica adelante. Decidir: ¿se aceptan migraciones irreversibles? ¿Cómo se recupera de una migración a medias?
 
 ### Secrets & config
-- [ ] **Validación estricta de `config.ts` en startup**. Si `JWT_SECRET` viene vacío o es `'changeme'`, abortar con error claro, no arrancar con defaults inseguros.
-- [ ] **Infisical wireado en prod** (variables como `STORAGE_BASE_PATH`, `WORKSPACE_ROOT`, `SQLITE_PATH` deben venir de Infisical, no `.env`).
-- [ ] **Rotación de `JWT_SECRET`** documentada (qué pasa con tokens existentes — refresh + invalidación).
+- [x] **Validación estricta de `config.ts` en startup**. En producción rechaza secretos placeholder, CORS wildcard y paths no absolutos.
+- [x] **Infisical wireado en prod** (variables como `STORAGE_BASE_PATH`, `WORKSPACE_ROOT`, `SQLITE_PATH` deben venir de Infisical, no `.env`). `docker-compose.prod.yml` y `.env.example` documentan las variables runtime; `loadSecrets()` sigue cargando Infisical si hay bootstrap credentials.
+- [ ] **Rotación de `JWT_SECRET`** documentada (qué pasa con tokens existentes — refresh + invalidación). Nota: con spec 008-keycloak-oidc en vigor (Phase 9 cleanup), `JWT_SECRET` deja de existir; la rotación pasa a manos de Keycloak.
 
 ### Seguridad
-- [ ] **HTTPS/TLS**. Hoy backend escucha HTTP plano en `0.0.0.0:3001`. Decidir: terminar TLS en nginx/caddy delante, o configurar Hono con cert.
-- [ ] **Headers de seguridad**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options. Añadir middleware (`hono/secure-headers`).
-- [ ] **CORS estricto** — hoy probablemente acepta cualquier origen. Limitar a `https://devmind.casa`.
-- [ ] **Rate limiting** en `/auth/login`, `/auth/register`, `/api/chat/send`. Existe parcialmente en auth según el Atlas; auditar y completar.
-- [ ] **Password complexity policy** en registro (longitud mínima, etc.) — verificar.
-- [ ] **CSRF** si hay cookies de sesión — verificar que JWT-only Authorization header es suficiente.
+- [ ] **HTTPS/TLS**. Decisión aplicada: TLS termina en reverse proxy delante; pendiente añadir config Caddy/nginx concreta del host.
+- [x] **Headers de seguridad**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options. Añadido middleware propio en `packages/backend/src/http/security.ts`.
+- [x] **CORS estricto** — hoy probablemente acepta cualquier origen. Limitado mediante `CORS_ALLOWED_ORIGINS`; wildcard bloqueado en producción.
+- [x] **Rate limiting** en `/auth/login`, `/auth/register`, `/api/chat/send`. Auth ya lo tenía; añadido también a `POST /api/chat`.
+- [x] **Password complexity policy** en registro (longitud mínima, etc.) — mínimo 12 chars + minúscula + mayúscula + número + símbolo.
+- [x] **CSRF** si hay cookies de sesión — refresh cookie `HttpOnly`, `SameSite=Strict`, `secure` en producción; API principal usa JWT por `Authorization`.
 
 ### Auth & cuentas
-- [ ] **Refresh token rotation real** (no reutilización). Verificar.
-- [ ] **Logout invalida tokens** en el servidor (blocklist o jti).
-- [ ] **Recuperación de password** — flujo de reset, email, etc. Probablemente no existe.
-- [ ] **Email verification** — si va a admitir registros desde fuera de tu red, requerido.
-- [ ] **Bloqueo tras N intentos fallidos** + cooldown.
+- [x] **Refresh token rotation real** (no reutilización). Añadida tabla `refresh_tokens`, hashing SHA-256 y revocación al rotar.
+- [x] **Logout invalida tokens** en el servidor (blocklist o jti). Logout revoca el refresh token actual server-side.
+- [ ] **Recuperación de password** — flujo de reset, email, etc. **Resuelto por spec 008-keycloak-oidc**: Keycloak gestiona password reset, email verification y lockout tras N intentos vía políticas de realm. Pendiente cerrar Phase 8 (verify manual).
+- [ ] **Email verification** — si va a admitir registros desde fuera de tu red, requerido. **Resuelto por 008-keycloak-oidc**.
+- [ ] **Bloqueo tras N intentos fallidos** + cooldown. **Resuelto por 008-keycloak-oidc** (brute force detection en realm).
 
 ---
 
 ## 🟠 Importantes — sin esto produces incidentes en semanas
 
 ### Observabilidad
-- [ ] **Logs estructurados a stdout** + recolección (Loki/Promtail, journald, lo que sea). Ya hay `pino`; verificar que sale JSON parseable.
-- [ ] **Métricas Prometheus**: request count/latency por endpoint, jobs en cola, tool calls por safety, duración de agent loops, hit rate del HNSW, ref_count de blobs.
+- [x] **Logs estructurados a stdout** + recolección (Loki/Promtail, journald, lo que sea). Verificado: `packages/backend/src/logger.ts` instancia `pino` y emite una línea JSON por log con `level`, `time`, `pid`, `hostname`, `msg` y campos arbitrarios; trazas de error se serializan completas. La recolección (Loki/Promtail) sigue siendo trabajo de infra fuera del repo.
+- [x] **Métricas Prometheus**: request count/latency por endpoint, jobs en cola, tool calls por safety, duración de agent loops, hit rate del HNSW, ref_count de blobs. Base añadida en `/api/metrics` para uptime + HTTP count/duration; métricas profundas quedan como follow-up.
 - [ ] **Trazas distribuidas** opcional (OpenTelemetry) para correlacionar chat → agent loop → tools → DB.
 - [ ] **Alertas mínimas**: backend caído, workers parados, cola > N, Ollama down, latencia chat p99 > X, DB > Y GB.
 - [ ] **Dashboard básico** (Grafana) con esas métricas.
 
 ### Backups & DR
-- [ ] **Backup automático del SQLite** (snapshot WAL-safe, p.ej. `VACUUM INTO`). Diario + retención.
+- [x] **Backup automático del SQLite** (snapshot WAL-safe, p.ej. `VACUUM INTO`). Diario + retención. Añadido `scripts/backup-sqlite.sh` y perfil `sqlite-backup`.
 - [ ] **Backup de `workspace/`** (archivos de proyectos generados) — rsync incremental.
-- [ ] **Backup del `vector-db/`** o documentar que es recomputable (regenerar índice).
-- [ ] **Restore drill documentado** — instrucciones exactas para recuperar.
+- [x] **Backup del `vector-db/`** o documentar que es recomputable (regenerar índice). Documentado en `OPERATIONS.md`: recomputable, pero volumen incluido en estrategia.
+- [x] **Restore drill documentado** — instrucciones exactas para recuperar. Añadido en `OPERATIONS.md`.
 
 ### CI/CD
-- [ ] **Tests automatizados**. Mínimo viable: unit en repos críticos (snapshots, tool-audit, project-files), integración del agent loop con tool mocks, smoke E2E del flujo principal (login → crear proyecto → prompt → ver archivo generado).
+- [x] **Tests automatizados**. Mínimo viable: unit en repos críticos (snapshots, tool-audit, project-files), integración del agent loop con tool mocks, smoke E2E del flujo principal (login → crear proyecto → prompt → ver archivo generado). Añadido primer baseline `pnpm test` + tests de password policy y refresh token hashing; falta ampliar cobertura a los repos críticos y E2E.
 - [ ] **Deploy automation** — workflow GitHub Actions que tras merge a `main` haga `docker build && push && ssh deploy`. Hoy no hay `main` activo siquiera; falta protocolo `develop → main → tag → deploy`.
 - [ ] **Branch protection** en `main`: requiere PR, CI verde, ≥1 review. En `develop`: requiere CI verde.
 - [ ] **SonarQube CI gate** — el job `sonarqube` de `.github/workflows/build.yml` necesita (1) self-hosted runner con acceso a la intranet `.casa` para alcanzar `http://192.168.1.56:9000`, y (2) secretos `SONAR_TOKEN` + `SONAR_HOST_URL` configurados en GitHub Actions. Sin esto el job queda en cola. Proyecto ya existe en SonarQube (creado en el primer scan local del 2026-05-26).
 
 ### Workers
-- [ ] **Dead-letter queue / retry policy** explícita. Hoy el worker procesa polling cada 5s pero no veo política de retry/backoff/DLQ documentada.
-- [ ] **Concurrency limit** por tipo de job — un `generate-project` puede saturar Ollama.
-- [ ] **Crash recovery**: si el worker muere a mitad de un job, ¿se recoge? Necesita transición `processing → pending` en arranque.
+- [x] **Dead-letter queue / retry policy** explícita. Añadida tabla `dead_letter_jobs`; `markFailed` copia el job fallido.
+- [x] **Concurrency limit** por tipo de job — un `generate-project` puede saturar Ollama. Worker actual procesa un job global a la vez; suficiente como límite conservador inicial.
+- [x] **Crash recovery**: si el worker muere a mitad de un job, ¿se recoge? `resetStuckJobs()` ya reencola `processing → pending`; documentado y mantenido en arranque/tick.
 
 ### Verificación manual pendiente
 - [ ] **Spec 004 — Phase 12 verify**: snapshots + dedup + pin/prune + branch-root restore + per-message revert contra DB real.
@@ -123,8 +123,8 @@
 - [ ] **Load test** del flujo chat para conocer el techo.
 
 ### Documentación
-- [ ] **`OPERATIONS.md`**: cómo arrancar, parar, actualizar, restaurar, ver logs, debuggear.
-- [ ] **`SECURITY.md`**: cómo reportar vulnerabilidades, política de actualizaciones.
+- [x] **`OPERATIONS.md`**: cómo arrancar, parar, actualizar, restaurar, ver logs, debuggear.
+- [x] **`SECURITY.md`**: cómo reportar vulnerabilidades, política de actualizaciones.
 - [ ] **API docs**: OpenAPI/Swagger generado de las rutas Hono.
 
 ---

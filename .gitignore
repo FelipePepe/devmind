@@ -37,3 +37,7 @@ logs/
 
 # SonarQube scanner work dir
 .scannerwork/
+
+# Playwright test artifacts
+test-results/
+playwright-report/

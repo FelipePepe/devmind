@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../../node_modules/tsx/dist/cli.cjs watch src/index.ts",
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js"
   },

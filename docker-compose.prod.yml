@@ -1,0 +1,104 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: devmind-backend:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_PATH: /app/data/devmind.db
+      SQLITE_PATH: /app/data/checkpoints.db
+      STORAGE_BASE_PATH: /app/storage
+      WORKSPACE_ROOT: /app/workspace
+      VECTOR_DB_PATH: /app/vectors
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://devmind.casa}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://devmind.casa}
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "true"
+    env_file:
+      - .env
+    ports:
+      - "0.0.0.0:3001:3001"
+    volumes:
+      - devmind-data:/app/data
+      - devmind-storage:/app/storage
+      - devmind-workspace:/app/workspace
+      - devmind-vectors:/app/vectors
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - devmind-net
+
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile.workers
+    image: devmind-workers:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DB_PATH: /app/data/devmind.db
+      STORAGE_BASE_PATH: /app/storage
+      WORKSPACE_ROOT: /app/workspace
+      VECTOR_DB_PATH: /app/vectors
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    env_file:
+      - .env
+    volumes:
+      - devmind-data:/app/data
+      - devmind-storage:/app/storage
+      - devmind-workspace:/app/workspace
+      - devmind-vectors:/app/vectors
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - devmind-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: devmind-frontend:local
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:5001:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - devmind-net
+
+  sqlite-backup:
+    image: alpine:3.20
+    restart: unless-stopped
+    profiles: ["backup"]
+    environment:
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - devmind-data:/data:ro
+      - ./backups:/backups
+      - ./scripts/backup-sqlite.sh:/usr/local/bin/backup-sqlite.sh:ro
+    command: ["/bin/sh", "-c", "apk add --no-cache sqlite >/dev/null && while true; do /usr/local/bin/backup-sqlite.sh /data/devmind.db /backups; sleep 86400; done"]
+
+networks:
+  devmind-net:
+    driver: bridge
+
+volumes:
+  devmind-data:
+  devmind-storage:
+  devmind-workspace:
+  devmind-vectors:

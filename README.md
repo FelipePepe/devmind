@@ -10,7 +10,7 @@ Suite de programación local con IA para la intranet `.casa`. Asistente de códi
 | Frontend | React + Vite + Zustand |
 | Workers | Background job queue (SQLite) |
 | IA | Ollama local (Qwen, nomic-embed-text) |
-| Auth | Password + MFA (TOTP) + JWT |
+| Auth | Keycloak OIDC (realm `casa`) + auth local (password + TOTP + JWT) durante ventana híbrida — ver `AUTH_OIDC.md` |
 | Búsqueda semántica | HNSW (hnswlib-node) + embeddings |
 | Secrets | Infisical (self-hosted) |
 | Runtime | Node.js 22, TypeScript strict, pnpm workspaces |
