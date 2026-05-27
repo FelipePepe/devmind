@@ -40,3 +40,22 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+  sonarqube:
+    name: SonarQube scan
+    runs-on: self-hosted
+    needs: quality
+    if: github.actor != 'dependabot[bot]'
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

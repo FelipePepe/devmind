@@ -80,6 +80,7 @@
 - [ ] **Tests automatizados**. Mínimo viable: unit en repos críticos (snapshots, tool-audit, project-files), integración del agent loop con tool mocks, smoke E2E del flujo principal (login → crear proyecto → prompt → ver archivo generado).
 - [ ] **Deploy automation** — workflow GitHub Actions que tras merge a `main` haga `docker build && push && ssh deploy`. Hoy no hay `main` activo siquiera; falta protocolo `develop → main → tag → deploy`.
 - [ ] **Branch protection** en `main`: requiere PR, CI verde, ≥1 review. En `develop`: requiere CI verde.
+- [ ] **SonarQube CI gate** — el job `sonarqube` de `.github/workflows/build.yml` necesita (1) self-hosted runner con acceso a la intranet `.casa` para alcanzar `http://192.168.1.56:9000`, y (2) secretos `SONAR_TOKEN` + `SONAR_HOST_URL` configurados en GitHub Actions. Sin esto el job queda en cola. Proyecto ya existe en SonarQube (creado en el primer scan local del 2026-05-26).
 
 ### Workers
 - [ ] **Dead-letter queue / retry policy** explícita. Hoy el worker procesa polling cada 5s pero no veo política de retry/backoff/DLQ documentada.

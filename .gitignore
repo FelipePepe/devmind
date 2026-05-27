@@ -34,3 +34,6 @@ logs/
 
 # Vite cache
 .vite/
+
+# SonarQube scanner work dir
+.scannerwork/
