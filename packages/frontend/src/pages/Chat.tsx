@@ -1,10 +1,16 @@
-import { useState, useCallback, useEffect } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { SessionSidebar } from '../components/session/SessionSidebar.js';
-import { ArtifactViewer } from '../components/artifacts/ArtifactViewer.js';
 import { useChatStore } from '../stores/chat.js';
 import { useSessionStore } from '../stores/session.js';
 import { parseArtifacts } from '../lib/artifacts.js';
+
+// Lazy: pulls highlight.js + language defs only when an artifact is rendered.
+const ArtifactViewer = lazy(() =>
+  import('../components/artifacts/ArtifactViewer.js').then((m) => ({
+    default: m.ArtifactViewer,
+  }))
+);
 
 export default function Chat() {
   const [input, setInput] = useState('');
@@ -38,7 +44,9 @@ export default function Chat() {
         onDelete={(id) => void deleteSession(id)}
       />
       <main className="main-area" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <ArtifactViewer artifacts={displayArtifacts} isStreaming={isStreaming && liveArtifacts.length > 0} />
+        <Suspense fallback={null}>
+          <ArtifactViewer artifacts={displayArtifacts} isStreaming={isStreaming && liveArtifacts.length > 0} />
+        </Suspense>
       </main>
       <ChatPanel
         messages={messages}

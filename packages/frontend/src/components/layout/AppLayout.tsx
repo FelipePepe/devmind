@@ -5,6 +5,7 @@ import { LogPanel } from './LogPanel.js';
 import { MigrationBanner } from './MigrationBanner.js';
 import { useAuthStore } from '../../stores/auth.js';
 import { useLogStore } from '../../stores/log.js';
+import { ErrorBoundary } from '../ErrorBoundary.js';
 import Chat from '../../pages/Chat.js';
 import Projects from '../../pages/Projects.js';
 import Builder from '../../pages/Builder.js';
@@ -12,6 +13,10 @@ import FlagsAdmin from '../../pages/admin/Flags.js';
 import UsersAdmin from '../../pages/admin/Users.js';
 import JobsAdmin from '../../pages/admin/Jobs.js';
 import OllamaSettings from '../../pages/admin/OllamaSettings.js';
+
+function Page({ scope, children }: { scope: string; children: ReactNode }) {
+  return <ErrorBoundary scope={scope}>{children}</ErrorBoundary>;
+}
 
 function AdminRoute({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user);
@@ -41,16 +46,18 @@ export default function AppLayout() {
       <MigrationBanner />
       <Routes>
         <Route path="/" element={<Navigate to="/projects" replace />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:id" element={<Builder />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/admin/flags" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><FlagsAdmin /></div></AdminRoute>} />
-        <Route path="/admin/users" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><UsersAdmin /></div></AdminRoute>} />
-        <Route path="/admin/jobs" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><JobsAdmin /></div></AdminRoute>} />
-        <Route path="/admin/ollama" element={<AuthRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><OllamaSettings /></div></AuthRoute>} />
+        <Route path="/projects" element={<Page scope="Projects"><Projects /></Page>} />
+        <Route path="/projects/:id" element={<Page scope="Builder"><Builder /></Page>} />
+        <Route path="/chat" element={<Page scope="Chat"><Chat /></Page>} />
+        <Route path="/admin/flags" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Flags"><FlagsAdmin /></Page></div></AdminRoute>} />
+        <Route path="/admin/users" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Users"><UsersAdmin /></Page></div></AdminRoute>} />
+        <Route path="/admin/jobs" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Jobs"><JobsAdmin /></Page></div></AdminRoute>} />
+        <Route path="/admin/ollama" element={<AuthRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Ollama settings"><OllamaSettings /></Page></div></AuthRoute>} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
-      <LogPanel />
+      <ErrorBoundary scope="Log panel">
+        <LogPanel />
+      </ErrorBoundary>
     </div>
   );
 }
