@@ -51,9 +51,20 @@
 
 ## Phase 6 — Verification [infra]
 
-- [ ] 6.1 [infra] Manual: run a chat session that calls read + write + destructive tools; query `/admin/tool-audit`; confirm one row per call with correct safety
-- [ ] 6.2 [infra] Manual: send a prompt that triggers `run_command` with a malformed argument shape; confirm `status='invalid-args'` and Zod issues in excerpt
-- [ ] 6.3 [infra] Manual: set `tools.autonomy_level=block-destructive` via flags admin; trigger `run_command`; confirm `status='blocked'` and clear error to the agent
+> **Verification note (2026-05-29):** the audit-writing primitives are covered
+> by `tool-call-audit.test.ts` (10/10 green): provisional `insertStart` →
+> `updateFinish`, one-shot `insertFinal` incl. the **blocked** path, `status`
+> and `safety` enum checks (so `ok`/`invalid-args`/`blocked` are constrained),
+> excerpt truncation, and `pruneOlderThan`. The route authz is covered by
+> `e2e/health-and-security.spec.ts` (`Non-admin user cannot read /admin/tool-audit`).
+> Items below stay **OPERATOR** because they assert the *end-to-end agent loop*
+> (executor classification + gate + Zod rejection emitting the right audit row)
+> through a live LLM session — there is no executor-level unit test and the dev
+> stack could not be booted here (root-owned `.vite` cache + broken `tsx` CLI).
+
+- [ ] 6.1 **OPERATOR** [infra] run a chat session calling read+write+destructive tools; `/admin/tool-audit` shows one row per call with correct safety — audit rows + safety enum unit-verified; live loop needs a running stack + LLM.
+- [ ] 6.2 **OPERATOR** [infra] `run_command` with malformed args → `status='invalid-args'` + Zod issues in excerpt — `invalid-args` status constrained by the enum test; live trigger needs the agent loop.
+- [ ] 6.3 **OPERATOR** [infra] `tools.autonomy_level=block-destructive` → `run_command` → `status='blocked'` + clear error — blocked-path row unit-verified (`insertFinal … blocked path`); gate behaviour needs a live session.
 - [x] 6.4 [infra] Confirm `pnpm -r build` passes
 - [x] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
 - [x] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)
