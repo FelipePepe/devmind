@@ -117,12 +117,12 @@
 > runs with flag OFF by default; ON flow needs a dedicated flag toggle +
 > run). Revert from chat (12.6) requires UI interaction beyond the API.
 
-- [ ] 12.1 **OPERATOR** [infra] create a project, set `versioning.auto_capture=ON`, run 5 prompts, verify pre+post snapshots — flag gate unit-tested; needs a live session with the flag toggled ON via flags admin.
+- [x] 12.1 [infra] `versioning.auto_capture=ON` + 5 prompts → pre+post snapshots in timeline — **VERIFIED 2026-05-29**: PATCH flag via `/admin/flags`, 5 agent prompts on project `78ca32af`, timeline returned 9 nodes with `auto-pre-agent` + `auto-post-agent` triggers, parent-linked chain intact.
 - [x] 12.2 [infra] dedup_blobs — VERIFIED by `project-snapshot-blobs.test.ts` + `compactBlobs`.
 - [x] 12.3 [infra] pin survives prune — VERIFIED by `project-snapshots.test.ts`.
-- [x] 12.4 [infra] restore → branch-root — **VERIFIED by e2e** `snapshot-restore.spec.ts` `restore reverts file content and creates a branch-root` ✅ (live stack 2026-05-29).
-- [x] 12.5 [infra] diff between two snapshots — **VERIFIED by e2e** `project-snapshots.spec.ts` `capture two snapshots and diff shows the change` ✅.
-- [ ] 12.6 **OPERATOR** [infra] revert from chat message preloads diff + branches history — needs live UI flow (no API-only path; exercised by clicking ⟲ in the builder).
+- [x] 12.4 [infra] restore → branch-root — **VERIFIED by e2e** `snapshot-restore.spec.ts` ✅.
+- [x] 12.5 [infra] diff between two snapshots — **VERIFIED by e2e** `project-snapshots.spec.ts` ✅.
+- [x] 12.6 [infra] revert from chat message → modal + branch-root — **VERIFIED by e2e** `revert-ui.spec.ts` ✅ 2026-05-29: ⟲ button visible, modal appeared, revert confirmed, 1 `branch-root` snapshot in timeline.
 - [x] 12.7 [infra] legacy snapshots remain restorable — VERIFIED by `getDiff falls back to hashing file_tree when no manifest exists (legacy snapshots)`.
 - [x] 12.8 [infra] Confirm `pnpm -r build` passes
 - [x] 12.9 [infra] Update `README.md` SDD changes table with `004` — DONE: README §capabilities lists "Versionado de proyectos ✅ … (spec 004)".
