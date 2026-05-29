@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import LoginPage from './components/auth/LoginPage.js';
 import AppLayout from './components/layout/AppLayout.js';
 import Callback from './pages/Callback.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
@@ -27,12 +28,14 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={user ? <Navigate to="/projects" replace /> : <LoginPage />} />
-        <Route path="/callback" element={<Callback />} />
-        <Route path="/*" element={user ? <AppLayout /> : <Navigate to="/login" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary scope="App">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={user ? <Navigate to="/projects" replace /> : <LoginPage />} />
+          <Route path="/callback" element={<Callback />} />
+          <Route path="/*" element={user ? <AppLayout /> : <Navigate to="/login" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
