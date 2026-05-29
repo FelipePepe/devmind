@@ -55,6 +55,6 @@
 - [ ] 6.2 [infra] Manual: send a prompt that triggers `run_command` with a malformed argument shape; confirm `status='invalid-args'` and Zod issues in excerpt
 - [ ] 6.3 [infra] Manual: set `tools.autonomy_level=block-destructive` via flags admin; trigger `run_command`; confirm `status='blocked'` and clear error to the agent
 - [x] 6.4 [infra] Confirm `pnpm -r build` passes
-- [ ] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
-- [ ] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)
-- [ ] 6.7 [infra] Update `README.md` to mark phase 8 as ✅ (audit + classification + Zod + gate)
+- [x] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
+- [x] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)
+- [x] 6.7 [infra] Update `README.md` to mark phase 8 as ✅ (audit + classification + Zod + gate)
