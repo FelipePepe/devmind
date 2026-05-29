@@ -130,7 +130,11 @@ export class ToolExecutor {
     if (!this.flags) return 'auto';
     try {
       const flag = this.flags.get('tools.autonomy_level');
-      return flag?.value === 'block-destructive' ? 'block-destructive' : 'auto';
+      if (!flag) return 'auto';
+      // FlagsRepo stores values as JSON-encoded strings; parse before comparing.
+      let parsed: unknown = flag.value;
+      try { parsed = JSON.parse(flag.value); } catch { /* raw string fallback */ }
+      return parsed === 'block-destructive' ? 'block-destructive' : 'auto';
     } catch (err) {
       logger.warn({ err }, 'Failed to read tools.autonomy_level flag, defaulting to auto');
       return 'auto';

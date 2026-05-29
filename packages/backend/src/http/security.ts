@@ -34,9 +34,7 @@ export async function securityHeadersMiddleware(c: Context, next: Next): Promise
       "object-src 'none'",
     ].join('; ')
   );
-  if (config.NODE_ENV === 'production') {
-    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 }
 
 export async function corsMiddleware(c: Context, next: Next): Promise<Response | void> {
