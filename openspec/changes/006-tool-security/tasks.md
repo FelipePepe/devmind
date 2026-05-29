@@ -51,20 +51,17 @@
 
 ## Phase 6 — Verification [infra]
 
-> **Verification note (2026-05-29):** the audit-writing primitives are covered
-> by `tool-call-audit.test.ts` (10/10 green): provisional `insertStart` →
-> `updateFinish`, one-shot `insertFinal` incl. the **blocked** path, `status`
-> and `safety` enum checks (so `ok`/`invalid-args`/`blocked` are constrained),
-> excerpt truncation, and `pruneOlderThan`. The route authz is covered by
-> `e2e/health-and-security.spec.ts` (`Non-admin user cannot read /admin/tool-audit`).
-> Items below stay **OPERATOR** because they assert the *end-to-end agent loop*
-> (executor classification + gate + Zod rejection emitting the right audit row)
-> through a live LLM session — there is no executor-level unit test and the dev
-> stack could not be booted here (root-owned `.vite` cache + broken `tsx` CLI).
+> **Verified live 2026-05-29** against a running stack (Node 22, Ollama
+> `qwen3-coder:30b` remote). Two bugs found and fixed during verification:
+> (1) `executor.ts::autonomyLevel()` compared the raw DB value (JSON-encoded
+> string) against a plain string — gate never fired; fixed by JSON.parse.
+> (2) `security.ts` gated HSTS behind `NODE_ENV=production` so the header
+> was absent in dev/test; fixed by making it unconditional.
+> Both fixes landed in commit `aca980b`.
 
-- [ ] 6.1 **OPERATOR** [infra] run a chat session calling read+write+destructive tools; `/admin/tool-audit` shows one row per call with correct safety — audit rows + safety enum unit-verified; live loop needs a running stack + LLM.
-- [ ] 6.2 **OPERATOR** [infra] `run_command` with malformed args → `status='invalid-args'` + Zod issues in excerpt — `invalid-args` status constrained by the enum test; live trigger needs the agent loop.
-- [ ] 6.3 **OPERATOR** [infra] `tools.autonomy_level=block-destructive` → `run_command` → `status='blocked'` + clear error — blocked-path row unit-verified (`insertFinal … blocked path`); gate behaviour needs a live session.
+- [x] 6.1 [infra] run a chat session calling read+write+destructive tools; `/admin/tool-audit` shows one row per call with correct safety — **VERIFIED**: `file_list` → `safety=read,status=ok`; `run_command` → `safety=destructive,status=ok`; audit trail confirms 1 row/call.
+- [x] 6.2 [infra] `run_command` with malformed args → `status='invalid-args'` + Zod issues in excerpt — **VERIFIED**: `run_command{command:[1,2,3]}` recorded `status=invalid-args`, excerpt contains Zod path/message.
+- [x] 6.3 [infra] `tools.autonomy_level=block-destructive` → `run_command` → `status='blocked'` + clear error — **VERIFIED** (after gate fix `aca980b`): `status=blocked`, excerpt `'Tool run_command blocked by operator policy: tools.autonomy_level=block-destructive'`.
 - [x] 6.4 [infra] Confirm `pnpm -r build` passes
 - [x] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
 - [x] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)

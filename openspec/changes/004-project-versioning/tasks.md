@@ -109,22 +109,20 @@
 
 ## Phase 12 — Verification [infra]
 
-> **Verification note (2026-05-29):** core repo logic is covered by the
-> backend unit suite (53/53 green this session): `project-snapshots.test.ts`
-> + `project-snapshot-blobs.test.ts`. Items below marked `[x]` are closed on
-> that automated coverage. Items marked **OPERATOR** require a live stack
-> (and an LLM for capture/revert flows); the pure-API e2e specs exist
-> (`e2e/snapshot-restore.spec.ts`, `e2e/project-snapshots.spec.ts`) but could
-> not be re-run here — the dev stack failed to boot (root-owned `.vite` cache
-> + broken `tsx watch` CLI under Node 22). Run them against a live `:5173`
-> before the prod cutover.
+> **Verified live 2026-05-29** — stack booted (backend `node --import tsx`,
+> Vite dev server, Ollama `qwen3-coder:30b` remote). e2e suite re-run:
+> `project-snapshots.spec.ts` 4/4 ✅ · `snapshot-restore.spec.ts` 1/1 ✅ ·
+> `agent-build.spec.ts` 1/1 ✅ (49s, real LLM, wrote `index.html`).
+> Auto-capture (12.1) exercised indirectly by agent-build (project loop
+> runs with flag OFF by default; ON flow needs a dedicated flag toggle +
+> run). Revert from chat (12.6) requires UI interaction beyond the API.
 
-- [ ] 12.1 **OPERATOR** [infra] create a project, run 5 prompts with `versioning.auto_capture = ON`, verify pre+post snapshots — needs live LLM. Flag gate verified by unit `isAutoCaptureEnabled flips with the feature flag`.
-- [x] 12.2 [infra] dedup_blobs shows shared blobs across snapshots — VERIFIED by `project-snapshot-blobs.test.ts` (`writeIfMissing` once, `incrementRef`/`decrementRef` dedup) + `prune … decrements blob ref counts`, `compactBlobs`.
-- [x] 12.3 [infra] pin a snapshot, force prune, pinned survives — VERIFIED by `project-snapshots.test.ts` `prune keeps pinned snapshots even beyond the retention cap`.
-- [ ] 12.4 **OPERATOR** [infra] restore older snapshot → `branch-root` created, prior tip remains — covered by `e2e/snapshot-restore.spec.ts` (pure-API; not re-run, see note).
-- [x] 12.5 [infra] diff between two snapshots renders — backend VERIFIED by `getDiff classifies added / removed / modified`; UI flow encoded in `e2e/project-snapshots.spec.ts` (`capture two snapshots and diff shows the change`).
-- [ ] 12.6 **OPERATOR** [infra] revert from a chat message preloads correct diff + branches history — needs live UI + LLM.
+- [ ] 12.1 **OPERATOR** [infra] create a project, set `versioning.auto_capture=ON`, run 5 prompts, verify pre+post snapshots — flag gate unit-tested; needs a live session with the flag toggled ON via flags admin.
+- [x] 12.2 [infra] dedup_blobs — VERIFIED by `project-snapshot-blobs.test.ts` + `compactBlobs`.
+- [x] 12.3 [infra] pin survives prune — VERIFIED by `project-snapshots.test.ts`.
+- [x] 12.4 [infra] restore → branch-root — **VERIFIED by e2e** `snapshot-restore.spec.ts` `restore reverts file content and creates a branch-root` ✅ (live stack 2026-05-29).
+- [x] 12.5 [infra] diff between two snapshots — **VERIFIED by e2e** `project-snapshots.spec.ts` `capture two snapshots and diff shows the change` ✅.
+- [ ] 12.6 **OPERATOR** [infra] revert from chat message preloads diff + branches history — needs live UI flow (no API-only path; exercised by clicking ⟲ in the builder).
 - [x] 12.7 [infra] legacy snapshots remain restorable — VERIFIED by `getDiff falls back to hashing file_tree when no manifest exists (legacy snapshots)`.
 - [x] 12.8 [infra] Confirm `pnpm -r build` passes
 - [x] 12.9 [infra] Update `README.md` SDD changes table with `004` — DONE: README §capabilities lists "Versionado de proyectos ✅ … (spec 004)".
