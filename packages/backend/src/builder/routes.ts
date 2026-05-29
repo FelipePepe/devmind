@@ -1050,6 +1050,46 @@ export function createBuilderRouter(
     return c.body(null, 204);
   });
 
+  // Project export — full data dump as a downloadable JSON file
+  router.get('/projects/:id/export', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+
+    const payload = {
+      format: 'devmind-export',
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      project,
+      files: projectFiles.findByProject(projectId).map((f) => ({
+        path: f.path,
+        content: f.content,
+        language: f.language,
+      })),
+      manifest: projectManifests.findByProject(projectId) ?? null,
+      services: projectServices.findByProject(projectId),
+      apiRoutes: projectApiRoutes.findByProject(projectId),
+      database: {
+        schemas: projectDbSchemas.findByProject(projectId),
+        migrations: projectDbMigrations.findByProject(projectId),
+      },
+      envVars: projectEnvVars.findByProject(projectId),
+    };
+
+    const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `devmind-${slug}-${date}.json`;
+
+    return new Response(JSON.stringify(payload, null, 2), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  });
+
   // Preview serve — serves generated files as static assets (no auth: iframe-friendly)
   router.get('/projects/:id/preview/serve/:path{.*}', (c) => {
     const projectId = c.req.param('id');

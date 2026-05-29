@@ -212,6 +212,7 @@ export default function Builder() {
   const [runtime, setRuntime] = useState<ProjectRuntimeInstance | null>(null);
   const [timeline, setTimeline] = useState<ProjectSnapshotsTimeline | null>(null);
   const [diffModal, setDiffModal] = useState<{ from: string; to: string; restoreTargetId: string | null } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('files');
   const [centerTab, setCenterTab] = useState<CenterTab>('editor');
@@ -317,9 +318,11 @@ export default function Builder() {
       setChatMessages(msgs);
     };
 
-    load().catch((err) => {
-      setChatError(err instanceof Error ? err.message : 'Failed to load project');
-    });
+    load()
+      .catch((err) => {
+        setChatError(err instanceof Error ? err.message : 'Failed to load project');
+      })
+      .finally(() => setIsLoading(false));
   }, [id]);
 
   const openFile = async (path: string) => {
@@ -563,6 +566,14 @@ export default function Builder() {
       setIsStreaming(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+        Loading project…
+      </div>
+    );
+  }
 
   return (
     <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '260px 1fr 360px', minHeight: 0, overflow: 'hidden' }}>
@@ -890,11 +901,22 @@ export default function Builder() {
           )}
         </div>
 
-        {/* Back link */}
-        <div style={{ padding: 'var(--space-3)', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          <Link className="btn btn-ghost btn-sm" to="/projects" style={{ justifyContent: 'center', width: '100%' }}>
+        {/* Back link + export */}
+        <div style={{ padding: 'var(--space-3)', borderTop: '1px solid var(--border-subtle)', flexShrink: 0, display: 'flex', gap: 'var(--space-2)' }}>
+          <Link className="btn btn-ghost btn-sm" to="/projects" style={{ flex: 1, justifyContent: 'center' }}>
             ← Projects
           </Link>
+          {id && (
+            <a
+              href={`/api/projects/${id}/export`}
+              download
+              title="Export project as JSON"
+              className="btn btn-ghost btn-sm"
+              style={{ flexShrink: 0 }}
+            >
+              ↓ Export
+            </a>
+          )}
         </div>
       </aside>
 

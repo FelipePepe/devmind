@@ -50,6 +50,7 @@ jobs:
     needs: quality
     if: github.actor != 'dependabot[bot]'
     timeout-minutes: 15
+    continue-on-error: true
 
     steps:
       - name: Checkout

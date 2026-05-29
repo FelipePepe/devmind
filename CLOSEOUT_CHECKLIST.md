@@ -33,9 +33,9 @@
 - [x] **004 12.9** README SDD table — ya listaba 004
 - [x] **004 12.10** Atlas `DevMind.md` — actualizado
 
-**Pendiente con stack (necesita sesión adicional con flag ON):**
-- [ ] **004 12.1** auto-capture ON: 5 prompts → pre+post snapshots verificados — requiere toggle `versioning.auto_capture=ON` + sesión de agente real.
-- [ ] **004 12.6** revert desde mensaje de chat → modal + branch-root — requiere clic en UI builder (no hay ruta pure-API).
+**Verificado con stack real (commit `d4dec58`):**
+- [x] **004 12.1** auto-capture ON: 5 prompts → 9 snapshots (auto-pre-agent/auto-post-agent triggers, cadena parent-linked) — verificado con flag `versioning.auto_capture=ON` en sesión real de agente.
+- [x] **004 12.6** revert desde mensaje de chat → modal + branch-root — e2e `revert-ui.spec.ts` (14s, navega UI builder, clic ⟲, confirma diff modal, aserta snapshot en timeline).
 
 ---
 
@@ -63,6 +63,6 @@
 ---
 
 ## Resumen
-- **Cerrado:** Bloques A y B prácticamente completos. Bloque C: decisiones y docs.
-- **Pendiente operador/infra:** KC setup (0.1, 1.1-1.5, DNS, 8.4-8.6) + 2 verificaciones de UX manual (004 12.1, 12.6) + Phase 9 diferida.
-- **Changes activos:** `004`/`006` (solo 12.1 y 12.6 abiertos), `008` (infra KC), `005` (draft).
+- **Cerrado:** Bloques A y B completos al 100%. Bloque C: decisiones y docs.
+- **Pendiente operador/infra:** KC setup (0.1, 1.1-1.5, DNS, 8.4-8.6) + Phase 9 diferida.
+- **Changes activos:** `008` (infra KC), `005` (draft).

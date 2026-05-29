@@ -1,0 +1,60 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            echo "=== Building and restarting services ==="
+            docker compose -f docker-compose.prod.yml pull --ignore-pull-failures || true
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "=== Waiting for health check ==="
+            for i in $(seq 1 30); do
+              STATUS=$(curl -sf http://127.0.0.1:3001/api/health | grep -o '"db":"ok"' || echo "")
+              if [ -n "$STATUS" ]; then
+                echo "Health check passed after ${i}s"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "Health check failed after 30s" >&2
+                docker compose -f docker-compose.prod.yml logs --tail=50 backend
+                exit 1
+              fi
+              sleep 1
+            done
+
+            echo "=== Deploy complete ==="
