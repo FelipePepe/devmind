@@ -142,4 +142,21 @@ export class ToolCallAuditRepo {
       .prepare('SELECT * FROM tool_call_audit ORDER BY started_at DESC LIMIT ?')
       .all(cap) as ToolCallAudit[];
   }
+
+  /**
+   * Delete audit rows started before the given ISO cutoff. Returns the
+   * number of rows removed. Used by the periodic retention task — the
+   * table is append-only and otherwise grows unbounded.
+   */
+  pruneOlderThan(cutoffIso: string): number {
+    const result = this.db
+      .prepare('DELETE FROM tool_call_audit WHERE started_at < ?')
+      .run(cutoffIso);
+    return result.changes;
+  }
+
+  countAll(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM tool_call_audit').get() as { n: number };
+    return row.n;
+  }
 }

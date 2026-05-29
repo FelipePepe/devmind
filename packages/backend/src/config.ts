@@ -57,6 +57,11 @@ const rawConfigSchema = z.object({
   // Feature flags
   FLAG_CACHE_TTL_MS: z.coerce.number().default(300_000), // 5 min
 
+  // Audit log retention (spec 006 follow-up — tool_call_audit grows unbounded).
+  // Rows older than this are pruned on a periodic tick. 0 disables pruning.
+  TOOL_AUDIT_RETENTION_DAYS: z.coerce.number().min(0).default(30),
+  TOOL_AUDIT_PRUNE_INTERVAL_MS: z.coerce.number().min(60_000).default(3_600_000), // 1h
+
   // Signed URLs
   SIGNED_URL_TTL_MS: z.coerce.number().default(3_600_000), // 1 hour
 

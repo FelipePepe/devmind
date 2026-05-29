@@ -306,11 +306,32 @@ async function start(): Promise<void> {
     }
   );
 
+  // Periodic prune of tool_call_audit. Disabled when retention=0 (e.g. dev).
+  let auditPruneTimer: ReturnType<typeof setInterval> | undefined;
+  if (config.TOOL_AUDIT_RETENTION_DAYS > 0) {
+    const runPrune = (): void => {
+      const cutoff = new Date(
+        Date.now() - config.TOOL_AUDIT_RETENTION_DAYS * 86_400_000
+      ).toISOString();
+      try {
+        const removed = toolAudit.pruneOlderThan(cutoff);
+        if (removed > 0) {
+          logger.info({ removed, cutoff }, 'Tool audit: pruned old rows');
+        }
+      } catch (err) {
+        logger.error({ err }, 'Tool audit: prune failed');
+      }
+    };
+    runPrune();
+    auditPruneTimer = setInterval(runPrune, config.TOOL_AUDIT_PRUNE_INTERVAL_MS);
+  }
+
   let shuttingDown = false;
   function shutdown(): void {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info('Shutting down...');
+    if (auditPruneTimer) clearInterval(auditPruneTimer);
     wsManager.closeAll();
     wss.close(() => {
       server.close((err) => {

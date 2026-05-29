@@ -141,6 +141,38 @@ test('safety enum check rejects unknown values', () => {
   );
 });
 
+test('pruneOlderThan deletes rows below cutoff and leaves newer rows untouched', () => {
+  const db = freshDb();
+  const repo = new ToolCallAuditRepo(db);
+
+  // Two rows: one synthetically aged into the past, one current.
+  const oldId = repo.insertFinal({
+    ...baseStart,
+    status: 'ok',
+    outputExcerpt: 'old',
+    error: null,
+    durationMs: 0,
+  });
+  db.prepare("UPDATE tool_call_audit SET started_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(oldId);
+
+  const newId = repo.insertFinal({
+    ...baseStart,
+    status: 'ok',
+    outputExcerpt: 'new',
+    error: null,
+    durationMs: 0,
+  });
+
+  const cutoff = '2024-01-01T00:00:00Z';
+  const removed = repo.pruneOlderThan(cutoff);
+  assert.equal(removed, 1);
+
+  const remaining = repo.countAll();
+  assert.equal(remaining, 1);
+  const row = db.prepare('SELECT id FROM tool_call_audit').get() as { id: string };
+  assert.equal(row.id, newId);
+});
+
 test('findRecent returns rows newest-first with cap clamped to [1, 500]', async () => {
   const db = freshDb();
   const repo = new ToolCallAuditRepo(db);
