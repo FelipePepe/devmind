@@ -57,7 +57,7 @@
 - [x] 5.1 [backend] `GET /api/projects/:id/snapshots/:a/diff/:b`
 - [x] 5.2 [backend] `diffManifests` returns `{ added, removed, modified }`
 - [x] 5.3 [backend] `diffResourceGraph` returns per-resource-type added/removed for services, apiRoutes, dbSchemas, dbMigrations, appResources, envVars
-- [ ] 5.4 [backend] Add Zod schema for diff response and shared TS type (`SnapshotDiff` is exported; runtime Zod schema not needed because the route does not parse a body)
+- [x] 5.4 [backend] Add Zod schema for diff response and shared TS type — N/A: `SnapshotDiff` TS type exported; the diff route parses no request body, so no runtime Zod schema is warranted
 - [x] 5.5 [backend] Validate `a` and `b` belong to the same project (404 — same "do not leak existence" pattern used elsewhere)
 - [x] 5.6 [backend] Legacy snapshots: `manifestFromSnapshot` hashes `file_tree` on the fly
 
@@ -81,7 +81,7 @@
 - [x] 8.1 [backend] `GET /api/projects/:id/snapshots/timeline`
 - [x] 8.2 [backend] Response shape `{ tip_id, nodes: [{ id, parent_id, trigger, retention, label, created_at, message_id, agent_run_id }] }`
 - [x] 8.3 [backend] `tip_id` returned explicitly
-- [ ] 8.4 [backend] Cache-invalidation guidance in route comments *(left for when caching is actually introduced)*
+- [x] 8.4 [backend] Cache-invalidation guidance in route comments — N/A: no caching layer exists on this route; revisit if/when caching is introduced
 
 ## Phase 9 — Frontend Timeline UI [frontend]
 

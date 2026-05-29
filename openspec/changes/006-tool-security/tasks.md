@@ -34,7 +34,7 @@
 - [x] 3.4 [backend] `inputSchema` on `task_update` (taskId nonempty, status enum)
 - [x] 3.5 [backend] `inputSchema` on `create_project_snapshot` (label optional, runId optional/null)
 - [x] 3.6 [backend] Read tools intentionally omit `inputSchema`; convention is documented in `types.ts`
-- [ ] 3.7 [backend] `save_session` is not currently in the registry — verify whether it should land here or be added in a follow-up *(left as note for whoever next touches `session-tools.ts`)*
+- [x] 3.7 [backend] `save_session` registry decision — RESOLVED: intentionally NOT registered. `tools/index.ts` wires only `session_history`/`task_update`/`artifact_list` from `impl/session-tools.ts`; sessions persist automatically via the chat pipeline, so no agent-facing `session_save` tool is needed. The top-level `tools/session-save.ts` is an unused legacy stub (flagged for removal in a cleanup follow-up).
 
 ## Phase 4 — Executor wireup [backend]
 
