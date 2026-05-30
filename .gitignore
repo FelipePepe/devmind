@@ -41,3 +41,6 @@ logs/
 # Playwright test artifacts
 test-results/
 playwright-report/
+
+# Observability runtime data
+observability/grafana/data/

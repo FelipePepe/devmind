@@ -4,6 +4,7 @@ import type { ToolContext, ToolDef } from './types.js';
 import type { OllamaToolCall } from '../ollama/types.js';
 import type { ToolCallAuditRepo, ToolSafety } from '../db/repos/tool-call-audit.js';
 import type { FlagsRepo } from '../db/repos/flags.js';
+import type { MetricsRegistry } from '../telemetry/metrics.js';
 
 const TOOL_TIMEOUT_MS = 30_000;
 
@@ -17,12 +18,11 @@ export interface ToolResult {
 export class ToolExecutor {
   constructor(
     private readonly registry: ToolRegistry,
-    // Spec 006: audit + autonomy gate. Optional for back-compat with any
-    // legacy caller (tests, scripts) that still constructs an executor with
-    // only the registry — audit writes are skipped in that case and the gate
-    // falls back to 'auto'.
+    // Spec 006: audit + autonomy gate. Optional for back-compat.
     private readonly audit?: ToolCallAuditRepo,
-    private readonly flags?: FlagsRepo
+    private readonly flags?: FlagsRepo,
+    // Spec 010: metrics instrumentation.
+    private readonly metrics?: MetricsRegistry,
   ) {}
 
   async execute(call: OllamaToolCall, ctx: ToolContext): Promise<ToolResult> {
@@ -37,6 +37,7 @@ export class ToolExecutor {
         error: errorMsg,
         durationMs: 0,
       });
+      this.metrics?.recordToolCall('destructive', 'invalid-args');
       return errorResult(call, { error: errorMsg });
     }
 
@@ -54,6 +55,7 @@ export class ToolExecutor {
         error: errorMsg,
         durationMs: 0,
       });
+      this.metrics?.recordToolCall(safety, 'invalid-args');
       return errorResult(call, { error: errorMsg });
     }
 
@@ -73,6 +75,7 @@ export class ToolExecutor {
           error: errorMsg,
           durationMs: 0,
         });
+        this.metrics?.recordToolCall(safety, 'invalid-args');
         return errorResult(call, { error: errorMsg, issues });
       }
       args = parsed.data as Record<string, unknown>;
@@ -87,6 +90,7 @@ export class ToolExecutor {
         error: errorMsg,
         durationMs: 0,
       });
+      this.metrics?.recordToolCall(safety, 'blocked');
       return errorResult(call, { error: errorMsg, blocked: true });
     }
 
@@ -106,6 +110,7 @@ export class ToolExecutor {
         error: null,
         durationMs: Date.now() - start,
       });
+      this.metrics?.recordToolCall(safety, 'ok');
       return { tool_call_id: call.id, name: call.function.name, content };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Tool failed';
@@ -116,6 +121,7 @@ export class ToolExecutor {
         error: message,
         durationMs: Date.now() - start,
       });
+      this.metrics?.recordToolCall(safety, 'error');
       return errorResult(call, { error: message });
     } finally {
       clearTimeout(timeoutId);

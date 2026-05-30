@@ -7,6 +7,7 @@ import type { ToolResult } from '../tools/executor.js';
 import type { OllamaMessage, ChatStreamParams } from '../ollama/types.js';
 import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
 import type { FlagsRepo } from '../db/repos/flags.js';
+import type { MetricsRegistry } from '../telemetry/metrics.js';
 
 const MAX_ITERATIONS = 8;
 
@@ -33,6 +34,8 @@ export interface AgentLoopOptions {
   // Spec 006 — passed through to ToolExecutor for audit log + autonomy gate.
   toolAudit?: ToolCallAuditRepo;
   flags?: FlagsRepo;
+  // Spec 010 — metrics instrumentation.
+  metrics?: MetricsRegistry;
 }
 
 /**
@@ -42,11 +45,12 @@ export interface AgentLoopOptions {
  * 3. If finish_reason === stop (or max iterations reached) → done
  */
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
-  const { model, registry, ctx, callbacks, toolAudit, flags } = opts;
-  const executor = new ToolExecutor(registry, toolAudit, flags);
+  const { model, registry, ctx, callbacks, toolAudit, flags, metrics } = opts;
+  const executor = new ToolExecutor(registry, toolAudit, flags, metrics);
   const tools = registry.getOllamaTools();
 
   const messages: OllamaMessage[] = [...opts.messages];
+  const loopStart = Date.now();
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (ctx.signal?.aborted) return;
@@ -79,6 +83,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return;
       logger.error({ err, iteration }, 'Agent loop stream error');
+      metrics?.recordAgentLoop('error', Date.now() - loopStart);
       await callbacks.onError(err instanceof Error ? err : new Error(String(err)), iteration);
       return;
     }
@@ -116,6 +121,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // reason 'stop' instead of 'tool_calls'. Execute pending tools whenever
     // they exist; only finish when there are genuinely no tools to run.
     if (pendingToolCalls.length === 0) {
+      metrics?.recordAgentLoop('success', Date.now() - loopStart);
       await callbacks.onDone(iteration + 1);
       return;
     }
@@ -144,5 +150,6 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
   // Max iterations reached — treat as done
   logger.warn({ sessionId: ctx.sessionId }, 'Agent loop hit max iterations');
+  metrics?.recordAgentLoop('max_iter', Date.now() - loopStart);
   await callbacks.onDone(MAX_ITERATIONS);
 }

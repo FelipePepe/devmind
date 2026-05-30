@@ -1,0 +1,102 @@
+apiVersion: 1
+
+groups:
+  - name: devmind-alerts
+    orgId: 1
+    folder: DevMind
+    interval: 1m
+    rules:
+      - uid: devmind-backend-down
+        title: BackendDown
+        condition: A
+        for: 2m
+        annotations:
+          summary: DevMind backend is not responding to Prometheus scrapes.
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: "absent(devmind_uptime_seconds)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+
+      - uid: devmind-workers-stalled
+        title: WorkersStalled
+        condition: A
+        for: 5m
+        annotations:
+          summary: Job queue is growing but workers are not completing jobs.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: "devmind_job_queue_depth{status=\"pending\"} > 5 and increase(devmind_agent_loop_total[5m]) == 0"
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+
+      - uid: devmind-queue-depth-high
+        title: QueueDepthHigh
+        condition: A
+        for: 2m
+        annotations:
+          summary: "Job queue has more than 50 pending jobs."
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: "devmind_job_queue_depth{status=\"pending\"} > 50"
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+
+      - uid: devmind-ollama-unreachable
+        title: OllamaUnreachable
+        condition: A
+        for: 3m
+        annotations:
+          summary: Ollama is not responding to health checks.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: "devmind_ollama_health_latency_ms == -1"
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+
+      - uid: devmind-db-size-critical
+        title: DbSizeCritical
+        condition: A
+        for: 5m
+        annotations:
+          summary: "SQLite database file exceeds 1 GB."
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: "devmind_db_size_bytes > 1073741824"
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+
+# Contact point and routing policy are intentionally not provisioned here.
+# Configure a notification channel (webhook, email, Slack) via
+# Grafana UI → Alerting → Contact points after deployment.
+# Set GRAFANA_ALERT_WEBHOOK env var to automate this via the Grafana API.
