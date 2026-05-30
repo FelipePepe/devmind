@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { MessageEvidence } from './project-tests.js';
 
 export type MessageRole = 'user' | 'assistant' | 'tool';
 
@@ -8,11 +9,16 @@ export interface Message {
   role: MessageRole;
   content: string;
   agent_run_id: string | null;
+  evidence_json: string | null;
   created_at: string;
 }
 
 export interface MessageWithSnapshot extends Message {
   linked_snapshot_id: string | null;
+}
+
+export interface MessageWithEvidence extends MessageWithSnapshot {
+  evidence: MessageEvidence | null;
 }
 
 export class MessagesRepo {
@@ -36,9 +42,7 @@ export class MessagesRepo {
       .get(id) as Message;
   }
 
-  findBySession(sessionId: string, limit = 100): MessageWithSnapshot[] {
-    // LEFT JOIN onto project_snapshots so the frontend can render a "revert to
-    // here" affordance on assistant messages produced by an auto-captured run.
+  findBySession(sessionId: string, limit = 100): MessageWithEvidence[] {
     return this.db
       .prepare(
         `SELECT m.*, s.id AS linked_snapshot_id
@@ -48,6 +52,20 @@ export class MessagesRepo {
          ORDER BY m.created_at ASC
          LIMIT ?`
       )
-      .all(sessionId, limit) as MessageWithSnapshot[];
+      .all(sessionId, limit)
+      .map((row) => parseEvidence(row as MessageWithSnapshot)) as MessageWithEvidence[];
   }
+
+  attachEvidence(messageId: string, evidence: MessageEvidence): void {
+    this.db
+      .prepare('UPDATE messages SET evidence_json = ? WHERE id = ?')
+      .run(JSON.stringify(evidence), messageId);
+  }
+}
+
+function parseEvidence(row: MessageWithSnapshot): MessageWithEvidence {
+  return {
+    ...row,
+    evidence: row.evidence_json ? (JSON.parse(row.evidence_json) as MessageEvidence) : null,
+  };
 }

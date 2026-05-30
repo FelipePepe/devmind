@@ -11,6 +11,7 @@ import {
 } from './impl/session-tools.js';
 import { createProjectFileTools } from './impl/project-file-tools.js';
 import { createProjectStructureTools } from './impl/project-structure-tools.js';
+import { createPlaywrightTools } from './impl/playwright-tools.js';
 import type { SessionsRepo } from '../db/repos/sessions.js';
 import type { MessagesRepo } from '../db/repos/messages.js';
 import type { TasksRepo } from '../db/repos/tasks.js';
@@ -23,12 +24,15 @@ import type { ProjectDbSchemasRepo, ProjectDbMigrationsRepo } from '../db/repos/
 import type { ProjectEnvVarsRepo } from '../db/repos/project-env-vars.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { ProjectSnapshotsRepo } from '../db/repos/project-snapshots.js';
+import type { ProjectTestsRepo, ProjectTestRunsRepo } from '../db/repos/project-tests.js';
+import type { FlagsRepo } from '../db/repos/flags.js';
 
 export interface ToolServices {
   sessions: SessionsRepo;
   messages: MessagesRepo;
   tasks: TasksRepo;
   storage: StorageService;
+  flags?: FlagsRepo;
   projectFiles?: ProjectFilesRepo;
   projectManifests?: ProjectManifestsRepo;
   projectServices?: ProjectServicesRepo;
@@ -37,6 +41,8 @@ export interface ToolServices {
   projectDbMigrations?: ProjectDbMigrationsRepo;
   projectEnvVars?: ProjectEnvVarsRepo;
   projectSnapshots?: ProjectSnapshotsRepo;
+  projectTests?: ProjectTestsRepo;
+  projectTestRuns?: ProjectTestRunsRepo;
   jobs?: JobQueueClient;
 }
 
@@ -87,6 +93,23 @@ export function createToolRegistry(
       services.projectEnvVars,
       services.projectSnapshots,
       services.jobs
+    ));
+  }
+
+  if (
+    services.projectTests &&
+    services.projectTestRuns &&
+    services.projectFiles &&
+    services.jobs &&
+    services.flags
+  ) {
+    registry.register(...createPlaywrightTools(
+      services.projectTests,
+      services.projectTestRuns,
+      services.projectFiles,
+      services.messages,
+      services.jobs,
+      services.flags
     ));
   }
 

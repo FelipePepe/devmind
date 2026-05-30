@@ -35,6 +35,7 @@ import { ProjectEnvVarsRepo } from './db/repos/project-env-vars.js';
 import { ProjectValidationReportsRepo, ProjectRuntimeInstancesRepo } from './db/repos/project-validation-runtime.js';
 import { ProjectSnapshotsRepo } from './db/repos/project-snapshots.js';
 import { ProjectSnapshotBlobsRepo } from './db/repos/project-snapshot-blobs.js';
+import { ProjectTestsRepo, ProjectTestRunsRepo } from './db/repos/project-tests.js';
 import { ToolCallAuditRepo } from './db/repos/tool-call-audit.js';
 import { RefreshTokensRepo } from './db/repos/refresh-tokens.js';
 
@@ -113,6 +114,8 @@ async function start(): Promise<void> {
   const projectRuntimeInstances = new ProjectRuntimeInstancesRepo(db);
   const projectSnapshotBlobs = new ProjectSnapshotBlobsRepo(db);
   const projectSnapshots = new ProjectSnapshotsRepo(db, projectSnapshotBlobs, flags);
+  const projectTests = new ProjectTestsRepo(db);
+  const projectTestRuns = new ProjectTestRunsRepo(db);
   const toolAudit = new ToolCallAuditRepo(db);
   const refreshTokens = new RefreshTokensRepo(db);
   const metrics = new MetricsRegistry();
@@ -187,6 +190,8 @@ async function start(): Promise<void> {
     projectValidationReports,
     projectRuntimeInstances,
     projectSnapshots,
+    projectTests,
+    projectTestRuns,
     jobs: queue,
     toolAudit,
     flags,
@@ -261,6 +266,8 @@ async function start(): Promise<void> {
       projectRuntimeInstances,
       projectSnapshots,
       projectSnapshotBlobs,
+      projectTests,
+      projectTestRuns,
       queue
     )
   );

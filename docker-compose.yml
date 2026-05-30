@@ -45,6 +45,9 @@ services:
     restart: unless-stopped
     working_dir: /app
     command: sh -c "pnpm --filter @devmind/workers dev"
+    shm_size: '256m'
+    tmpfs:
+      - /tmp/devmind-pw
     volumes:
       - .:/app
       - /mnt/nas/sources/devmind/data:/app/data
@@ -52,6 +55,8 @@ services:
       - devmind-node-modules:/app/node_modules
     environment:
       - NODE_ENV=development
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
     env_file:
       - .env
     networks:

@@ -8,7 +8,7 @@ import { ServicesPanel } from '../components/builder/ServicesPanel.js';
 import { SnapshotsTimeline } from '../components/builder/SnapshotsTimeline.js';
 import { SnapshotDiffModal } from '../components/builder/SnapshotDiffModal.js';
 import { useLogStore } from '../stores/log.js';
-import type { ProjectSnapshotsTimeline, SnapshotRetention } from '../types/index.js';
+import type { ProjectSnapshotsTimeline, SnapshotRetention, ProjectTest, TestRunStatus } from '../types/index.js';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react').then((m) => ({ default: m.Editor })));
 
@@ -181,7 +181,7 @@ const COMPONENT_SNIPPETS = [
   { label: 'Dashboard', icon: '◈', prompt: 'Add a dashboard layout with stat cards showing key metrics' },
 ] as const;
 
-type SidebarTab = 'files' | 'screens' | 'components' | 'services' | 'api' | 'database' | 'env' | 'validation' | 'runtime' | 'snapshots';
+type SidebarTab = 'files' | 'screens' | 'components' | 'services' | 'api' | 'database' | 'env' | 'validation' | 'runtime' | 'snapshots' | 'tests';
 type CenterTab = 'editor' | 'preview';
 
 function generateId(): string {
@@ -192,6 +192,19 @@ function generateId(): string {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
+}
+
+function TestStatusBadge({ status }: { status: TestRunStatus | null }) {
+  if (!status) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>;
+  const map: Record<TestRunStatus, { label: string; color: string }> = {
+    passed:    { label: '✓', color: 'var(--color-success, #4caf50)' },
+    failed:    { label: '✗', color: 'var(--color-error, #f44336)' },
+    pending:   { label: '…', color: 'var(--text-tertiary)' },
+    errored:   { label: '!', color: 'var(--color-error, #f44336)' },
+    timed_out: { label: '⏱', color: 'var(--text-tertiary)' },
+  };
+  const { label, color } = map[status];
+  return <span style={{ color, fontWeight: 700, fontSize: '11px' }}>{label}</span>;
 }
 
 export default function Builder() {
@@ -211,6 +224,8 @@ export default function Builder() {
   const [validationReports, setValidationReports] = useState<ProjectValidationReport[]>([]);
   const [runtime, setRuntime] = useState<ProjectRuntimeInstance | null>(null);
   const [timeline, setTimeline] = useState<ProjectSnapshotsTimeline | null>(null);
+  const [projectTests, setProjectTests] = useState<ProjectTest[]>([]);
+  const [runningTestId, setRunningTestId] = useState<string | null>(null);
   const [diffModal, setDiffModal] = useState<{ from: string; to: string; restoreTargetId: string | null } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -256,7 +271,7 @@ export default function Builder() {
 
   const loadProjectStructure = async () => {
     if (!id) return;
-    const [manifestData, serviceData, apiRoutesData, databaseData, envVarData, validationData, runtimeData, timelineData] = await Promise.all([
+    const [manifestData, serviceData, apiRoutesData, databaseData, envVarData, validationData, runtimeData, timelineData, testsData] = await Promise.all([
       apiFetch<ProjectManifest | null>(`/api/projects/${id}/manifest`),
       apiFetch<ProjectService[]>(`/api/projects/${id}/services`),
       apiFetch<ProjectApiRoute[]>(`/api/projects/${id}/api-routes`),
@@ -265,6 +280,7 @@ export default function Builder() {
       apiFetch<ProjectValidationReport[]>(`/api/projects/${id}/validation`),
       apiFetch<ProjectRuntimeInstance | null>(`/api/projects/${id}/runtime`),
       apiFetch<ProjectSnapshotsTimeline>(`/api/projects/${id}/snapshots/timeline`),
+      apiFetch<ProjectTest[]>(`/api/projects/${id}/tests`).catch(() => [] as ProjectTest[]),
     ]);
     setManifest(manifestData);
     setServices(serviceData);
@@ -274,6 +290,7 @@ export default function Builder() {
     setValidationReports(validationData);
     setRuntime(runtimeData);
     setTimeline(timelineData);
+    setProjectTests(testsData);
   };
 
   const loadPreviewTicket = async () => {
@@ -424,6 +441,28 @@ export default function Builder() {
       body: JSON.stringify({ retention }),
     });
     await loadProjectStructure();
+  };
+
+  const runTest = async (testId: string) => {
+    if (!id) return;
+    setRunningTestId(testId);
+    try {
+      const { run_id } = await apiFetch<{ run_id: string }>(`/api/projects/${id}/tests/${testId}/run`, { method: 'POST' });
+      const poll = async () => {
+        const runs = await apiFetch<Array<{ id: string; status: string }>>(`/api/projects/${id}/tests/${testId}/runs?limit=1`).catch(() => []);
+        const latest = runs[0];
+        if (latest?.id === run_id && latest?.status !== 'pending') {
+          setRunningTestId(null);
+          const tests = await apiFetch<ProjectTest[]>(`/api/projects/${id}/tests`).catch(() => projectTests);
+          setProjectTests(tests);
+        } else {
+          setTimeout(() => void poll(), 1500);
+        }
+      };
+      setTimeout(() => void poll(), 1500);
+    } catch {
+      setRunningTestId(null);
+    }
   };
 
   const handleChatSubmit = async (overrideInput?: string) => {
@@ -590,7 +629,7 @@ export default function Builder() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          {(['files', 'screens', 'components', 'services', 'api', 'database', 'env', 'validation', 'runtime', 'snapshots'] as SidebarTab[]).map((tab) => (
+          {(['files', 'screens', 'components', 'services', 'api', 'database', 'env', 'validation', 'runtime', 'snapshots', 'tests'] as SidebarTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSidebarTab(tab)}
@@ -898,6 +937,39 @@ export default function Builder() {
               onUpdateLabel={updateSnapshotLabel}
               onUpdateRetention={updateSnapshotRetention}
             />
+          )}
+
+          {/* TESTS TAB — Spec 005 */}
+          {sidebarTab === 'tests' && (
+            <div style={{ padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {projectTests.length === 0 ? (
+                <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)', textAlign: 'center', marginTop: 'var(--space-4)' }}>
+                  Tests proposed by the agent will appear here.
+                </p>
+              ) : (
+                projectTests.map((test) => (
+                  <div key={test.id} style={{ padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', fontSize: 'var(--text-xs)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                      <TestStatusBadge status={test.last_run_status} />
+                      <span style={{ flex: 1, fontWeight: 500, color: 'var(--text-primary)' }}>{test.title}</span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={runningTestId === test.id}
+                        onClick={() => void runTest(test.id)}
+                        style={{ fontSize: '10px', padding: '1px 6px' }}
+                      >
+                        {runningTestId === test.id ? '…' : '▶ Run'}
+                      </button>
+                    </div>
+                    <div style={{ color: 'var(--text-tertiary)' }}>
+                      {test.spec_path} · {test.source}
+                      {test.last_run_duration_ms !== null && ` · ${test.last_run_duration_ms}ms`}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
 

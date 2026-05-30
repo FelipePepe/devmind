@@ -34,6 +34,7 @@ import type {
 } from '../db/repos/project-validation-runtime.js';
 import type { ProjectSnapshotsRepo, SnapshotRetention } from '../db/repos/project-snapshots.js';
 import type { ProjectSnapshotBlobsRepo } from '../db/repos/project-snapshot-blobs.js';
+import type { ProjectTestsRepo, ProjectTestRunsRepo } from '../db/repos/project-tests.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { HonoEnv } from '../types.js';
 
@@ -222,6 +223,8 @@ export function createBuilderRouter(
   projectRuntimeInstances: ProjectRuntimeInstancesRepo,
   projectSnapshots: ProjectSnapshotsRepo,
   projectSnapshotBlobs: ProjectSnapshotBlobsRepo,
+  projectTests: ProjectTestsRepo,
+  projectTestRuns: ProjectTestRunsRepo,
   jobs: JobQueueClient
 ): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
@@ -1088,6 +1091,64 @@ export function createBuilderRouter(
         'Content-Disposition': `attachment; filename="${filename}"`,
       },
     });
+  });
+
+  // ── Playwright validation routes ────────────────────────────────────────────
+
+  router.get('/projects/:id/tests', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    return c.json(projectTests.findByProject(projectId));
+  });
+
+  router.get('/projects/:id/tests/:testId/runs', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const testId = c.req.param('testId');
+    if (!projectId || !testId) return c.json({ error: 'Missing params' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const test = projectTests.findById(testId);
+    if (!test || test.project_id !== projectId) return c.json({ error: 'Test not found' }, 404);
+    const limitRaw = c.req.query('limit');
+    const limit = limitRaw ? Math.min(Number(limitRaw) || 20, 100) : 20;
+    return c.json(projectTestRuns.findByTest(testId, limit));
+  });
+
+  const RunTestSchema = z.object({}).optional();
+
+  router.post('/projects/:id/tests/:testId/run', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const testId = c.req.param('testId');
+    if (!projectId || !testId) return c.json({ error: 'Missing params' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const test = projectTests.findById(testId);
+    if (!test || test.project_id !== projectId) return c.json({ error: 'Test not found' }, 404);
+    if (test.status === 'disabled') return c.json({ error: 'Test is disabled' }, 422);
+    const run = projectTestRuns.create({ projectId, testId });
+    jobs.enqueue('validate-with-playwright', { projectId, testId, runId: run.id });
+    return c.json({ run_id: run.id }, 202);
+  });
+
+  router.get('/projects/:id/tests/:testId/runs/:runId/evidence', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    const testId = c.req.param('testId');
+    const runId = c.req.param('runId');
+    if (!projectId || !testId || !runId) return c.json({ error: 'Missing params' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+    const run = projectTestRuns.findById(runId);
+    if (!run || run.test_id !== testId || run.project_id !== projectId) {
+      return c.json({ error: 'Run not found' }, 404);
+    }
+    if (!run.evidence_screenshot_hash) return c.json({ error: 'No evidence screenshot' }, 404);
+    return c.redirect(`/api/projects/${projectId}/snapshot-blobs/${run.evidence_screenshot_hash}`);
   });
 
   // Preview serve — serves generated files as static assets (no auth: iframe-friendly)

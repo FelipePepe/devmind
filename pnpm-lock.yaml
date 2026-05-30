@@ -151,6 +151,9 @@ importers:
 
   packages/workers:
     dependencies:
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
       better-sqlite3:
         specifier: ^11.5.0
         version: 11.10.0

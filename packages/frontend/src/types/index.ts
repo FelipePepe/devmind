@@ -15,6 +15,49 @@ export interface Session {
   archived_at?: string | null;
 }
 
+// Spec 005 — Playwright validation types
+
+export type TestSource = 'acceptance' | 'smoke' | 'manual';
+export type TestStatus = 'draft' | 'active' | 'disabled';
+export type TestRunStatus = 'pending' | 'passed' | 'failed' | 'errored' | 'timed_out';
+
+export interface MessageEvidence {
+  test_run_id: string;
+  status: 'passed' | 'failed';
+  screenshot_blob_hash: string | null;
+  video_blob_hash: string | null;
+  test_title: string;
+  error_excerpt?: string;
+}
+
+export interface ProjectTest {
+  id: string;
+  project_id: string;
+  source: TestSource;
+  title: string;
+  intent: string;
+  spec_path: string;
+  status: TestStatus;
+  created_at: string;
+  last_run_status: TestRunStatus | null;
+  last_run_duration_ms: number | null;
+  last_run_at: string | null;
+}
+
+export interface ProjectTestRun {
+  id: string;
+  project_id: string;
+  test_id: string;
+  agent_run_id: string | null;
+  status: TestRunStatus;
+  duration_ms: number | null;
+  evidence_screenshot_hash: string | null;
+  evidence_video_hash: string | null;
+  error_excerpt: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   session_id: string;
@@ -22,6 +65,7 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   linked_snapshot_id?: string | null;
+  evidence?: MessageEvidence | null;
 }
 
 // Spec 004 — project versioning shared types

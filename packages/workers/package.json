@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "better-sqlite3": "^11.5.0",
     "hnswlib-node": "^3.0.0",
     "pino": "^9.5.0"

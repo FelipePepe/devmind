@@ -29,6 +29,7 @@ import type {
 } from '../db/repos/project-validation-runtime.js';
 import type { JobQueueClient } from '../workers/queue.js';
 import type { ProjectSnapshotsRepo, ProjectSnapshotView } from '../db/repos/project-snapshots.js';
+import type { ProjectTestsRepo, ProjectTestRunsRepo } from '../db/repos/project-tests.js';
 import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
 import type { FlagsRepo } from '../db/repos/flags.js';
 import { snapshotStateHash } from '../db/repos/project-snapshots.js';
@@ -151,6 +152,9 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 - write_project_file: Write/update a file in the project (MAIN tool for code generation)
 - read_project_file: Read an existing project file
 - list_project_files: List all project files
+- propose_acceptance_test: (when validation enabled) Propose a Playwright spec for a user intent before writing code. Always call this first when validation.playwright_enabled is on.
+- run_project_tests: (when validation enabled) Run proposed tests against the live preview and get pass/fail + screenshot evidence.
+- attach_evidence_to_message: (when validation enabled) Attach test run evidence to the closing assistant message.
 - read_project_manifest: Read the structured full-stack project manifest
 - update_project_manifest: Create or update the structured full-stack project manifest
 - create_project_service: Create a frontend, backend, or worker service owned by the project
@@ -173,6 +177,21 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 - If the project has no files yet and the user asks to build something, create the first working version immediately
 - If the current prompt is generic, choose a polished starter app and implement it immediately
 - Default to maintainable modular code organization even for small apps
+
+## Playwright Validation (when validation.playwright_enabled is on)
+When the feature flag validation.playwright_enabled is active, follow this order for every code generation task:
+1. Call propose_acceptance_test with the user's intent verbatim.
+2. Write or edit code using write_project_file.
+3. Call run_project_tests with the test_id from step 1.
+4. If tests pass: call attach_evidence_to_message with the closing message_id and the test_run_id.
+5. If tests fail and you have attempts remaining (max 3 total): read the error_excerpt and fix the code, then go back to step 3.
+6. If all 3 attempts fail: report honest failure to the user with the error_excerpt and screenshot evidence.
+
+Well-formed acceptance tests use only role/label/text locators:
+- await page.getByRole('button', { name: /submit/i }).click();
+- await expect(page.getByRole('heading')).toContainText('Dashboard');
+- await page.getByLabel('Email').fill('user@example.com');
+- await expect(page.getByText('Login successful')).toBeVisible();
 
 ## Language
 - Always reply in the same language the user is writing in. If the user writes in Spanish, reply in Spanish; if in English, reply in English; and so on for any other language.
@@ -208,6 +227,8 @@ export interface ChatRouterDeps {
   projectValidationReports: ProjectValidationReportsRepo;
   projectRuntimeInstances: ProjectRuntimeInstancesRepo;
   projectSnapshots: ProjectSnapshotsRepo;
+  projectTests: ProjectTestsRepo;
+  projectTestRuns: ProjectTestRunsRepo;
   jobs: JobQueueClient;
   // Spec 006 — for the audit log + autonomy gate.
   toolAudit: ToolCallAuditRepo;
@@ -323,7 +344,10 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
           messages: deps.messages,
           tasks: deps.tasks,
           storage: deps.storage,
+          flags: deps.flags,
           projectFiles: deps.projectFiles,
+          projectTests: deps.projectTests,
+          projectTestRuns: deps.projectTestRuns,
           projectManifests: deps.projectManifests,
           projectServices: deps.projectServices,
           projectApiRoutes: deps.projectApiRoutes,
@@ -408,6 +432,15 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
                   deps.projectSnapshots.discard(post.id);
                 } else {
                   postSnapshotId = post.id;
+                  // Spec 005 — attach screenshot from latest passing test run to snapshot thumbnail
+                  try {
+                    const screenshotHash = deps.projectTestRuns.findLatestPassingScreenshotForRun(projectId, agentRun.id);
+                    if (screenshotHash) {
+                      deps.projectSnapshots.updateMetadata(post.id, { screenshotBlobHash: screenshotHash });
+                    }
+                  } catch (err) {
+                    logger.warn({ err }, 'snapshot thumbnail patch failed');
+                  }
                   try {
                     deps.projectSnapshots.prune(projectId);
                   } catch (err) {
