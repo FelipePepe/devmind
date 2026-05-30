@@ -96,16 +96,7 @@ groups:
               maxDataPoints: 43200
               refId: A
 
-contactPoints:
-  - orgId: 1
-    name: devmind-webhook
-    receivers:
-      - uid: devmind-webhook-receiver
-        type: webhook
-        settings:
-          url: "${GRAFANA_ALERT_WEBHOOK:-}"
-        disableResolveMessage: false
-
-policies:
-  - orgId: 1
-    receiver: devmind-webhook
+# Contact point and routing policy are intentionally not provisioned here.
+# Configure a notification channel (webhook, email, Slack) via
+# Grafana UI → Alerting → Contact points after deployment.
+# Set GRAFANA_ALERT_WEBHOOK env var to automate this via the Grafana API.
