@@ -8,7 +8,7 @@
 ## Phase 0 — SDD Baseline [infra]
 
 - [x] 0.1 ✅ **OWNER** [infra] Aprobar proposal, design, spec — sign-off dado 2026-05-30.
-- [x] 0.2 [infra] Confirmar dominio definitivo — DECIDIDO: `devmind.casa` (fijado en `AUTH_OIDC.md`: redirect URIs `http://devmind.casa/callback`, web origins, post-logout). ⚠ La **creación del registro DNS** sigue pendiente (op de intranet, ver C2).
+- [x] 0.2 [infra] Confirmar dominio definitivo — DECIDIDO: `devmind.casa` (fijado en `AUTH_OIDC.md`: redirect URIs `http://devmind.casa/callback`, web origins, post-logout). DNS registrado 2026-05-30: Pi-holes (ambos) + nginx ya habilitado (→ 5173 frontend, → 3003 backend/api/auth/admin).
 - [x] 0.3 [infra] Confirmar duración de ventana híbrida — DECIDIDO: ~30 días (cabecera de esta spec + `AUTH_OIDC.md`); gobierna la ejecución de la Phase 9. Fecha exacta a fijar cuando `AUTH_LOCAL_ENABLED=false` entre en prod.
 - [x] 0.4 [infra] Confirmar mapeo de roles — DECIDIDO: realm role `admin` (`OIDC_ADMIN_ROLE=admin`) OR `users.is_admin=1`; resto = user. Documentado en `AUTH_OIDC.md` §Roles.
 
