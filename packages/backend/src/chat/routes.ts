@@ -28,6 +28,7 @@ import type {
   ProjectRuntimeInstanceView,
 } from '../db/repos/project-validation-runtime.js';
 import type { JobQueueClient } from '../workers/queue.js';
+import type { MetricsRegistry } from '../telemetry/metrics.js';;
 import type { ProjectSnapshotsRepo, ProjectSnapshotView } from '../db/repos/project-snapshots.js';
 import type { ProjectTestsRepo, ProjectTestRunsRepo } from '../db/repos/project-tests.js';
 import type { ToolCallAuditRepo } from '../db/repos/tool-call-audit.js';
@@ -233,6 +234,8 @@ export interface ChatRouterDeps {
   // Spec 006 — for the audit log + autonomy gate.
   toolAudit: ToolCallAuditRepo;
   flags: FlagsRepo;
+  // Spec 010 — metrics instrumentation.
+  metrics?: MetricsRegistry;
 }
 
 export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
@@ -367,6 +370,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
         registry,
         toolAudit: deps.toolAudit,
         flags: deps.flags,
+        ...(deps.metrics !== undefined ? { metrics: deps.metrics } : {}),
         ctx: {
           userId,
           sessionId,

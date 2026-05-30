@@ -118,7 +118,7 @@ async function start(): Promise<void> {
   const projectTestRuns = new ProjectTestRunsRepo(db);
   const toolAudit = new ToolCallAuditRepo(db);
   const refreshTokens = new RefreshTokensRepo(db);
-  const metrics = new MetricsRegistry();
+  const metrics = new MetricsRegistry(db, config.DB_PATH, config.OLLAMA_BASE_URL);
 
   configureAuthMiddleware(users);
 
@@ -195,6 +195,7 @@ async function start(): Promise<void> {
     jobs: queue,
     toolAudit,
     flags,
+    metrics,
   }));
   app.route('/api/workspace', createWorkspaceRouter());
 
@@ -241,8 +242,8 @@ async function start(): Promise<void> {
     );
   });
 
-  app.get('/api/metrics', (c) => {
-    return c.text(metrics.render(), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
+  app.get('/api/metrics', async (c) => {
+    return c.text(await metrics.render(), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
   });
 
   app.route(

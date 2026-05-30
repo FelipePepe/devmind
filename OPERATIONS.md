@@ -142,3 +142,29 @@ Set `PUBLIC_ORIGIN=https://devmind.casa` and `CORS_ALLOWED_ORIGINS=https://devmi
 4. Restore workspace/storage volumes from rsync/snapshot backup.
 5. Start services and verify `/api/health`.
 6. Run a login + project open smoke test.
+
+## Observability
+
+Start the Prometheus + Loki + Promtail + Grafana stack alongside the app:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.observability.yml up -d
+```
+
+Set `GRAFANA_ADMIN_PASSWORD` in `.env` before starting (default `admin` is insecure).
+Optionally set `GRAFANA_ALERT_WEBHOOK` to receive alert notifications; leave unset for silent alerts.
+
+**Grafana:** `http://<host>:3000` — login with `admin` / `$GRAFANA_ADMIN_PASSWORD`.
+
+The **DevMind Overview** dashboard loads automatically (provisioned from `observability/grafana/provisioning/`).
+It covers: uptime, DB size, HTTP rates, agent loop duration, tool calls, job queue, Ollama health, and live logs.
+
+**Alert rules** (5 active):
+- `BackendDown` — backend absent from Prometheus for 2 min (critical)
+- `WorkersStalled` — pending queue growing with no loop completions for 5 min (warning)
+- `QueueDepthHigh` — pending jobs > 50 for 2 min (warning)
+- `OllamaUnreachable` — Ollama health latency = -1 for 3 min (warning)
+- `DbSizeCritical` — SQLite file > 1 GB for 5 min (warning)
+
+To silence an alert: Grafana → Alerting → Alert rules → Silence.
+To update the webhook: set `GRAFANA_ALERT_WEBHOOK` and redeploy Grafana.

@@ -66,9 +66,9 @@
 ### Observabilidad
 - [x] **Logs estructurados a stdout** + recolección (Loki/Promtail, journald, lo que sea). Verificado: `packages/backend/src/logger.ts` instancia `pino` y emite una línea JSON por log con `level`, `time`, `pid`, `hostname`, `msg` y campos arbitrarios; trazas de error se serializan completas. La recolección (Loki/Promtail) sigue siendo trabajo de infra fuera del repo.
 - [x] **Métricas Prometheus**: request count/latency por endpoint, jobs en cola, tool calls por safety, duración de agent loops, hit rate del HNSW, ref_count de blobs. Base añadida en `/api/metrics` para uptime + HTTP count/duration; métricas profundas quedan como follow-up.
-- [ ] **Trazas distribuidas** opcional (OpenTelemetry) para correlacionar chat → agent loop → tools → DB.
-- [ ] **Alertas mínimas**: backend caído, workers parados, cola > N, Ollama down, latencia chat p99 > X, DB > Y GB.
-- [ ] **Dashboard básico** (Grafana) con esas métricas.
+- [~] **Trazas distribuidas** opcional (OpenTelemetry) — diferido: no hay spans multi-servicio aún. Ver spec 010 §Out of scope.
+- [x] **Alertas mínimas**: 5 alert rules en Grafana (BackendDown, WorkersStalled, QueueDepthHigh, OllamaUnreachable, DbSizeCritical). Ver spec 010 + `docker-compose.observability.yml`.
+- [x] **Dashboard básico** (Grafana) — DevMind Overview: 7 rows cubriendo HTTP, agent loops, tool calls, job queue, Ollama, logs. Ver spec 010.
 
 ### Backups & DR
 - [x] **Backup automático del SQLite** (snapshot WAL-safe, p.ej. `VACUUM INTO`). Diario + retención. Añadido `scripts/backup-sqlite.sh` y perfil `sqlite-backup`.

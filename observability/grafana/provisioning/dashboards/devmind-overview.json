@@ -1,0 +1,131 @@
+{
+  "title": "DevMind Overview",
+  "uid": "devmind-overview",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_uptime_seconds", "legendFormat": "uptime" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "unit": "s" }
+    },
+    {
+      "id": 2,
+      "title": "DB Size",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_db_size_bytes", "legendFormat": "db size" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "unit": "bytes" }
+    },
+    {
+      "id": 3,
+      "title": "Blob Store Count",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_blob_store_blobs_total", "legendFormat": "blobs" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "title": "Ollama Health Latency",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_ollama_health_latency_ms", "legendFormat": "latency ms" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "unit": "ms" }
+    },
+    {
+      "id": 10,
+      "title": "HTTP — Requests/s",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "rate(devmind_http_requests_total[1m])", "legendFormat": "{{method}} {{route}} {{status}}" }]
+    },
+    {
+      "id": 11,
+      "title": "HTTP — Error Rate (5xx %)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "100 * sum(rate(devmind_http_requests_total{status=~\"5..\"}[1m])) / sum(rate(devmind_http_requests_total[1m]))",
+        "legendFormat": "5xx %"
+      }],
+      "options": { "unit": "percent" }
+    },
+    {
+      "id": 20,
+      "title": "Agent Loops — Outcomes/s",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "rate(devmind_agent_loop_total[1m])", "legendFormat": "{{outcome}}" }]
+    },
+    {
+      "id": 21,
+      "title": "Agent Loop — Duration p50/p95",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(devmind_agent_loop_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(devmind_agent_loop_duration_seconds_bucket[5m]))", "legendFormat": "p95" }
+      ],
+      "options": { "unit": "s" }
+    },
+    {
+      "id": 30,
+      "title": "Tool Calls — by Safety/s",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "rate(devmind_tool_calls_total[1m])", "legendFormat": "{{safety}} / {{status}}" }]
+    },
+    {
+      "id": 31,
+      "title": "Tool Calls — Block Rate %",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "100 * sum(rate(devmind_tool_calls_total{status=\"blocked\"}[1m])) / sum(rate(devmind_tool_calls_total[1m]))",
+        "legendFormat": "block %"
+      }],
+      "options": { "unit": "percent" }
+    },
+    {
+      "id": 40,
+      "title": "Job Queue — Depth by Status",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_job_queue_depth", "legendFormat": "{{status}}" }]
+    },
+    {
+      "id": 41,
+      "title": "Ollama — Health Latency",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{ "expr": "devmind_ollama_health_latency_ms", "legendFormat": "latency ms" }],
+      "options": { "unit": "ms" }
+    },
+    {
+      "id": 50,
+      "title": "Logs — Backend",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 12 },
+      "datasource": { "uid": "loki" },
+      "targets": [{ "expr": "{container=\"devmind-backend\"} |= ``", "legendFormat": "" }],
+      "options": { "showTime": true, "wrapLogMessage": true }
+    }
+  ]
+}
