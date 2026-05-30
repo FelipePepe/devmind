@@ -17,9 +17,13 @@ let initialized = false;
 
 export async function initPool(): Promise<void> {
   if (initialized) return;
-  browser = await chromium.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const executablePath = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'];
+  browser = await chromium.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    ...(executablePath ? { executablePath } : {}),
+  });
   initialized = true;
-  logger.info({ size: POOL_SIZE }, 'playwright pool ready');
+  logger.info({ size: POOL_SIZE, executablePath: executablePath ?? 'playwright-bundled' }, 'playwright pool ready');
 }
 
 export async function acquireContext(): Promise<BrowserContext> {
