@@ -1,6 +1,6 @@
 # Tasks: 010 — Observability
 
-> **Status**: Phases 0–5 completas (2026-05-30). 5.7 (BackendDown live) diferida — requiere full Docker stack. Pendiente Phase 6 (archive).
+> **Status**: ✅ Cerrada (2026-05-30). Phases 0–6 completas. 5.7 (BackendDown live) diferida — requiere full Docker stack. grafana.casa + prometheus.casa activos.
 
 ---
 
@@ -68,6 +68,6 @@
 
 ## Phase 6 — Archive [infra]
 
-- [ ] 6.1 [infra] Mover `openspec/changes/010-observability/` a `openspec/changes/archive/`
-- [ ] 6.2 [infra] Actualizar `Proyectos/DevMind.md` en Atlas: marcar 010 ✅ Cerrado
-- [ ] 6.3 [infra] Crear entrada de cierre en Engram (`session-end`)
+- [x] 6.1 [infra] Mover `openspec/changes/010-observability/` a `openspec/changes/archive/`
+- [x] 6.2 [infra] Actualizar `Proyectos/DevMind.md` en Atlas: marcar 010 ✅ Cerrado
+- [x] 6.3 [infra] Crear entrada de cierre en Engram (`session-end`)
