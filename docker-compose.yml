@@ -56,7 +56,7 @@ services:
     environment:
       - NODE_ENV=development
       - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
     env_file:
       - .env
     networks:
