@@ -6,6 +6,8 @@ import { archiveSessions } from './handlers/archive-sessions.js';
 import { generateProject, type GenerateProjectPayload } from './handlers/generate-project.js';
 import { rebuildPreview, type RebuildPreviewPayload } from './handlers/rebuild-preview.js';
 import { validateProject, type ValidateProjectPayload } from './handlers/validate-project.js';
+import { validateWithPlaywright, type ValidateWithPlaywrightPayload } from './handlers/validate-with-playwright.js';
+import { initPool, closePool } from './playwright/browser-pool.js';
 import type { Job } from './jobs.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -51,6 +53,11 @@ async function dispatch(job: Job): Promise<void> {
         await validateProject(JSON.parse(job.payload) as ValidateProjectPayload, jobs, job.id);
         logger.info({ jobId: job.id }, 'Job: validateProject completed');
         break;
+      case 'validate-with-playwright':
+        logger.info({ jobId: job.id }, 'Job: validate-with-playwright starting');
+        await validateWithPlaywright(JSON.parse(job.payload) as ValidateWithPlaywrightPayload, jobs, job.id);
+        logger.info({ jobId: job.id }, 'Job: validate-with-playwright completed');
+        break;
       default:
         logger.warn({ type: job.type }, 'Unknown job type');
         jobs.updateStatus(job.id, 'failed', `Unknown job type: ${job.type}`);
@@ -89,6 +96,11 @@ async function tick(): Promise<void> {
   }
 }
 
+// On startup: init Playwright browser pool, then start job loop
+void initPool().catch((err) => {
+  logger.warn({ err }, 'Playwright pool init failed — validate-with-playwright jobs will error');
+});
+
 // On startup: reset stuck jobs and check for today's archive job
 jobs.resetStuckJobs();
 if (!jobs.hasTodayArchiveJob()) {
@@ -107,8 +119,11 @@ process.on('SIGTERM', () => {
 
   const waitForIdle = (): void => {
     if (!isRunning) {
-      logger.info('Worker stopped cleanly');
-      process.exit(0);
+      void closePool().finally(() => {
+        logger.info('Worker stopped cleanly');
+        process.exit(0);
+      });
+      return;
     }
     setTimeout(waitForIdle, 500);
   };

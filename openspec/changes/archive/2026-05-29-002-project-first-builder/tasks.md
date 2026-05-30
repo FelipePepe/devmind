@@ -42,7 +42,7 @@
 
 ## Phase 6 — Verification [infra]
 
-- [ ] 6.1 [infra] Run `pnpm -r build` — OMITIDO por convención del proyecto (never build after changes)
+- [x] 6.1 [infra] Run `pnpm -r build` — N/A por convención del proyecto (never build); typecheck cubre la verificación estática
 - [x] 6.2 [infra] Smoke test: create project without chat — POST /api/projects no requiere sessionId, `sessions.create` es opcional
 - [x] 6.3 [infra] Smoke test: open builder shell and create first screen record — Builder.tsx carga project + screens, `POST /api/projects/:id/screens` funcional
 - [x] 6.4 [infra] Smoke test: start project-scoped chat and verify it does not own project state — chat acepta `projectId` opcional, project_id en session es FK nullable, project state vive en `projects`/`screens` independientemente

@@ -1,21 +1,34 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { type ReactNode } from 'react';
 import { TopBar } from './TopBar.js';
 import { LogPanel } from './LogPanel.js';
 import { MigrationBanner } from './MigrationBanner.js';
 import { useAuthStore } from '../../stores/auth.js';
 import { useLogStore } from '../../stores/log.js';
 import { ErrorBoundary } from '../ErrorBoundary.js';
-import Chat from '../../pages/Chat.js';
-import Projects from '../../pages/Projects.js';
-import Builder from '../../pages/Builder.js';
-import FlagsAdmin from '../../pages/admin/Flags.js';
-import UsersAdmin from '../../pages/admin/Users.js';
-import JobsAdmin from '../../pages/admin/Jobs.js';
-import OllamaSettings from '../../pages/admin/OllamaSettings.js';
+
+const Chat = lazy(() => import('../../pages/Chat.js'));
+const Projects = lazy(() => import('../../pages/Projects.js'));
+const Builder = lazy(() => import('../../pages/Builder.js'));
+const FlagsAdmin = lazy(() => import('../../pages/admin/Flags.js'));
+const UsersAdmin = lazy(() => import('../../pages/admin/Users.js'));
+const JobsAdmin = lazy(() => import('../../pages/admin/Jobs.js'));
+const OllamaSettings = lazy(() => import('../../pages/admin/OllamaSettings.js'));
+
+function PageLoader() {
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+      Loading…
+    </div>
+  );
+}
 
 function Page({ scope, children }: { scope: string; children: ReactNode }) {
-  return <ErrorBoundary scope={scope}>{children}</ErrorBoundary>;
+  return (
+    <ErrorBoundary scope={scope}>
+      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 function AdminRoute({ children }: { children: ReactNode }) {

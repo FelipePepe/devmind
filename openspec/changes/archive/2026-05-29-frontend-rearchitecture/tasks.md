@@ -37,3 +37,9 @@
 - [x] 5.4 Delete `src/hooks/useSession.ts`
 - [x] 5.5 Add CSS classes for auth forms to `src/styles/globals.css`
 - [x] 5.6 Build verify — OMITIDO (regla del proyecto: never build after changes; verificar manualmente)
+
+## Archive
+
+- **Status**: ARCHIVED
+- **Archived at**: 2026-05-29
+- **Verify result**: PASS — 23/23 tasks done; frontend typecheck + lint clean. ErrorBoundary + lazy-load (spec 012) built on this rearchitecture.

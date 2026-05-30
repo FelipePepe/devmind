@@ -1,4 +1,5 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
+import type { MessageEvidence } from '../../types/index.js';
 
 interface ChatMessage {
   id: string;
@@ -6,6 +7,7 @@ interface ChatMessage {
   content: string;
   created_at: string;
   linked_snapshot_id?: string | null;
+  evidence?: MessageEvidence | null;
 }
 
 interface PromptPanelProps {
@@ -20,6 +22,40 @@ interface PromptPanelProps {
   // Spec 004 — phase 11: when set, assistant messages with a linked snapshot
   // get a hover-revealed "revert to here" affordance.
   onRevertToMessage?: (linkedSnapshotId: string) => void;
+}
+
+function EvidenceBlock({ evidence, projectId }: { evidence: MessageEvidence; projectId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const passed = evidence.status === 'passed';
+  const blobUrl = evidence.screenshot_blob_hash
+    ? `/api/projects/${projectId}/snapshot-blobs/${evidence.screenshot_blob_hash}`
+    : null;
+
+  return (
+    <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: `1px solid ${passed ? 'var(--color-success, #4caf50)' : 'var(--color-error, #f44336)'}`, background: 'var(--bg-elevated)', fontSize: 'var(--text-xs)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <span style={{ color: passed ? 'var(--color-success, #4caf50)' : 'var(--color-error, #f44336)', fontWeight: 600 }}>
+          {passed ? '✓ Test passed' : '✗ Test failed'}
+        </span>
+        <span style={{ color: 'var(--text-tertiary)', flex: 1 }}>{evidence.test_title}</span>
+        {blobUrl && (
+          <a href={blobUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-tertiary)', textDecoration: 'underline' }}>screenshot</a>
+        )}
+      </div>
+      {!passed && evidence.error_excerpt && (
+        <div>
+          <button type="button" onClick={() => setExpanded((v) => !v)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 'var(--text-xs)', padding: 0, marginTop: 'var(--space-1)' }}>
+            {expanded ? '▲ hide error' : '▼ show error'}
+          </button>
+          {expanded && (
+            <pre style={{ marginTop: 'var(--space-1)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-error, #f44336)', fontSize: '10px' }}>
+              {evidence.error_excerpt}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const QUICK_PROMPTS = ['Build the app', 'Add dark mode', 'Make it mobile-friendly', 'Add animations'] as const;
@@ -66,6 +102,7 @@ export function PromptPanel({
               }}
             >
               {m.content}
+              {m.evidence && <EvidenceBlock evidence={m.evidence} projectId={m.id} />}
               {canRevert && (
                 <button
                   type="button"

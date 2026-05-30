@@ -8,19 +8,23 @@
 
 ## Phase 0 — SDD Baseline [infra]
 
-- [ ] 0.1 [infra] Aprobar proposal, design, spec
-- [ ] 0.2 [infra] Confirmar dominio definitivo de devmind en intranet (`devmind.casa`? Hoy aún sin DNS)
-- [ ] 0.3 [infra] Confirmar duración de ventana híbrida (sugerencia: 30 días)
-- [ ] 0.4 [infra] Confirmar mapeo de roles (admin vs user) y nombres KC
+- [ ] 0.1 ⛔ **OWNER** [infra] Aprobar proposal, design, spec — gate humano; fases 2-8 implementadas y verdes, listo para sign-off. Requiere el OK explícito del owner (no auto-aprobable).
+- [x] 0.2 [infra] Confirmar dominio definitivo — DECIDIDO: `devmind.casa` (fijado en `AUTH_OIDC.md`: redirect URIs `http://devmind.casa/callback`, web origins, post-logout). ⚠ La **creación del registro DNS** sigue pendiente (op de intranet, ver C2).
+- [x] 0.3 [infra] Confirmar duración de ventana híbrida — DECIDIDO: ~30 días (cabecera de esta spec + `AUTH_OIDC.md`); gobierna la ejecución de la Phase 9. Fecha exacta a fijar cuando `AUTH_LOCAL_ENABLED=false` entre en prod.
+- [x] 0.4 [infra] Confirmar mapeo de roles — DECIDIDO: realm role `admin` (`OIDC_ADMIN_ROLE=admin`) OR `users.is_admin=1`; resto = user. Documentado en `AUTH_OIDC.md` §Roles.
 
 ## Phase 1 — Keycloak — clients y configuración [infra]
 
-- [ ] 1.1 [infra] Crear client `devmind-frontend` en realm `casa` (public + PKCE S256, redirect URIs documentadas)
-- [ ] 1.2 [infra] Crear client `devmind-backend` confidential (opcional, para introspection)
-- [ ] 1.3 [infra] Configurar scopes default: `openid`, `profile`, `email`
-- [ ] 1.4 [infra] Añadir mapper de roles en client scope (realm_access.roles en id_token)
-- [ ] 1.5 [infra] Crear role `admin` en realm `casa`
-- [ ] 1.6 [infra] Documentar redirect URIs y env vars en `AUTH_OIDC.md`
+> ⛔ **OPERATOR / live KC** — 1.1–1.5 son configuración en el Keycloak real
+> (`https://auth.casa`, realm `casa`). No ejecutables desde este entorno (sin
+> acceso admin a la consola KC). La especificación exacta de cada uno ya está
+> documentada en `AUTH_OIDC.md` §Keycloak setup — copiar de ahí al crear.
+- [ ] 1.1 ⛔ OPERATOR [infra] Crear client `devmind-frontend` (public + PKCE S256, redirect URIs en `AUTH_OIDC.md`)
+- [ ] 1.2 ⛔ OPERATOR [infra] Crear client `devmind-backend` confidential (opcional, introspection)
+- [ ] 1.3 ⛔ OPERATOR [infra] Configurar scopes default: `openid`, `profile`, `email`
+- [ ] 1.4 ⛔ OPERATOR [infra] Mapper de roles en client scope (`realm_access.roles` en id_token)
+- [ ] 1.5 ⛔ OPERATOR [infra] Crear role `admin` en realm `casa`
+- [x] 1.6 [infra] Documentar redirect URIs y env vars en `AUTH_OIDC.md` — DONE: `AUTH_OIDC.md` cubre env vars backend+frontend, redirect/post-logout/web-origins y la config completa de ambos clients + roles.
 
 ## Phase 2 — Backend — JWKS + middleware [backend]
 
@@ -70,9 +74,9 @@
 - [x] 8.1 [infra] `AUTH_OIDC.md` — flujo, env vars backend+frontend, configuración KC (realm, clientes, roles), endpoints, troubleshooting, ventana híbrida.
 - [x] 8.2 [infra] `PRODUCTION_READINESS.md` actualizado — items de password reset / email verification / lockout marcados como resueltos por 008.
 - [x] 8.3 [infra] `README.md` Auth row actualizado (referencia a `AUTH_OIDC.md`).
-- [ ] 8.4 [infra] **Manual (requiere KC real)**: end-to-end login → callback → /projects → refresh → logout
-- [ ] 8.5 [infra] **Manual (requiere KC real)**: user local con email coincidente → linking automático al primer OIDC login
-- [ ] 8.6 [infra] **Manual (requiere KC real)**: KC down → frontend muestra error claro
+- [ ] 8.4 ⛔ OPERATOR [infra] **Requiere KC real + clients (Phase 1)**: end-to-end login → callback → /projects → refresh → logout
+- [ ] 8.5 ⛔ OPERATOR [infra] **Requiere KC real**: user local con email coincidente → linking automático al primer OIDC login (lógica de linking unit-cubierta: `linkKcSubject does not overwrite an existing email`)
+- [ ] 8.6 ⛔ OPERATOR [infra] **Requiere KC real**: KC down → frontend muestra error claro
 - [x] 8.7 [infra] `pnpm -r build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` green (validado en checkpoint final de cada fase)
 
 ## Phase 9 — Cleanup post-migración [backend, frontend] (NO en v1)

@@ -13,6 +13,7 @@ interface Project {
 export default function Projects() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -22,7 +23,8 @@ export default function Projects() {
   useEffect(() => {
     apiFetch<Project[]>('/api/projects')
       .then(setProjects)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load projects'));
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load projects'))
+      .finally(() => setIsLoadingProjects(false));
   }, []);
 
   const deleteProject = async (id: string, name: string) => {
@@ -112,7 +114,13 @@ export default function Projects() {
             <Link className="btn btn-secondary btn-sm" to="/chat">Open legacy chat</Link>
           </div>
 
-          {projects.length === 0 ? (
+          {isLoadingProjects ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} style={{ height: '88px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', opacity: 0.5 }} />
+              ))}
+            </div>
+          ) : projects.length === 0 ? (
             <div style={{ padding: 'var(--space-6)', background: 'linear-gradient(135deg, var(--bg-surface), var(--bg-surface-2))', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-lg)', color: 'var(--text-secondary)' }}>
               No projects yet. Create the first one from the panel on the left.
             </div>
@@ -141,22 +149,38 @@ export default function Projects() {
                     {project.description || 'No project brief yet.'}
                   </p>
                 </Link>
-                <button
-                  onClick={(e) => { e.preventDefault(); void deleteProject(project.id, project.name); }}
-                  disabled={deletingId === project.id}
-                  title="Delete project"
-                  style={{
-                    position: 'absolute', top: 'var(--space-3)', right: 'var(--space-3)',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-tertiary)', fontSize: '13px', padding: '4px 6px',
-                    borderRadius: 'var(--radius-sm)', lineHeight: 1,
-                    opacity: deletingId === project.id ? 0.5 : 0.6,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; e.currentTarget.style.opacity = '1'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.opacity = '0.6'; }}
-                >
-                  {deletingId === project.id ? '…' : '✕'}
-                </button>
+                <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-3)', display: 'flex', gap: '2px' }}>
+                  <a
+                    href={`/api/projects/${project.id}/export`}
+                    download
+                    title="Export project as JSON"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-tertiary)', fontSize: '13px', padding: '4px 6px',
+                      borderRadius: 'var(--radius-sm)', lineHeight: 1,
+                      opacity: 0.6, textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.opacity = '1'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.opacity = '0.6'; }}
+                  >
+                    ↓
+                  </a>
+                  <button
+                    onClick={(e) => { e.preventDefault(); void deleteProject(project.id, project.name); }}
+                    disabled={deletingId === project.id}
+                    title="Delete project"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-tertiary)', fontSize: '13px', padding: '4px 6px',
+                      borderRadius: 'var(--radius-sm)', lineHeight: 1,
+                      opacity: deletingId === project.id ? 0.5 : 0.6,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; e.currentTarget.style.opacity = '1'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.opacity = '0.6'; }}
+                  >
+                    {deletingId === project.id ? '…' : '✕'}
+                  </button>
+                </div>
               </div>
             ))
           )}

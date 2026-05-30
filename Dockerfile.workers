@@ -1,6 +1,12 @@
 FROM node:22-alpine AS base
-RUN apk add --no-cache python3 make g++
+# Playwright system deps (Chromium on Alpine) + native build tools
+RUN apk add --no-cache \
+    python3 make g++ \
+    chromium nss freetype harfbuzz ca-certificates ttf-freefont
 RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+# Tell Playwright to use the system Chromium instead of downloading its own
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 FROM base AS deps
 WORKDIR /app

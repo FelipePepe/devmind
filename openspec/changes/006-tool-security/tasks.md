@@ -34,7 +34,7 @@
 - [x] 3.4 [backend] `inputSchema` on `task_update` (taskId nonempty, status enum)
 - [x] 3.5 [backend] `inputSchema` on `create_project_snapshot` (label optional, runId optional/null)
 - [x] 3.6 [backend] Read tools intentionally omit `inputSchema`; convention is documented in `types.ts`
-- [ ] 3.7 [backend] `save_session` is not currently in the registry — verify whether it should land here or be added in a follow-up *(left as note for whoever next touches `session-tools.ts`)*
+- [x] 3.7 [backend] `save_session` registry decision — RESOLVED: intentionally NOT registered. `tools/index.ts` wires only `session_history`/`task_update`/`artifact_list` from `impl/session-tools.ts`; sessions persist automatically via the chat pipeline, so no agent-facing `session_save` tool is needed. The top-level `tools/session-save.ts` is an unused legacy stub (flagged for removal in a cleanup follow-up).
 
 ## Phase 4 — Executor wireup [backend]
 
@@ -51,9 +51,17 @@
 
 ## Phase 6 — Verification [infra]
 
-- [ ] 6.1 [infra] Manual: run a chat session that calls read + write + destructive tools; query `/admin/tool-audit`; confirm one row per call with correct safety
-- [ ] 6.2 [infra] Manual: send a prompt that triggers `run_command` with a malformed argument shape; confirm `status='invalid-args'` and Zod issues in excerpt
-- [ ] 6.3 [infra] Manual: set `tools.autonomy_level=block-destructive` via flags admin; trigger `run_command`; confirm `status='blocked'` and clear error to the agent
+> **Verified live 2026-05-29** against a running stack (Node 22, Ollama
+> `qwen3-coder:30b` remote). Two bugs found and fixed during verification:
+> (1) `executor.ts::autonomyLevel()` compared the raw DB value (JSON-encoded
+> string) against a plain string — gate never fired; fixed by JSON.parse.
+> (2) `security.ts` gated HSTS behind `NODE_ENV=production` so the header
+> was absent in dev/test; fixed by making it unconditional.
+> Both fixes landed in commit `aca980b`.
+
+- [x] 6.1 [infra] run a chat session calling read+write+destructive tools; `/admin/tool-audit` shows one row per call with correct safety — **VERIFIED**: `file_list` → `safety=read,status=ok`; `run_command` → `safety=destructive,status=ok`; audit trail confirms 1 row/call.
+- [x] 6.2 [infra] `run_command` with malformed args → `status='invalid-args'` + Zod issues in excerpt — **VERIFIED**: `run_command{command:[1,2,3]}` recorded `status=invalid-args`, excerpt contains Zod path/message.
+- [x] 6.3 [infra] `tools.autonomy_level=block-destructive` → `run_command` → `status='blocked'` + clear error — **VERIFIED** (after gate fix `aca980b`): `status=blocked`, excerpt `'Tool run_command blocked by operator policy: tools.autonomy_level=block-destructive'`.
 - [x] 6.4 [infra] Confirm `pnpm -r build` passes
 - [x] 6.5 [infra] Confirm `pnpm typecheck` passes (only meaningful once PR #7 merges and brings the per-package script + CI step into develop)
 - [x] 6.6 [infra] Confirm `pnpm lint` passes (same — depends on PR #7 landing `eslint.config.mjs`)

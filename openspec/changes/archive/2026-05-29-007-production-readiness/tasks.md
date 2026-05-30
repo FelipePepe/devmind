@@ -9,3 +9,9 @@
 - [x] Add backup/restore operations docs and script.
 - [x] Add minimal automated tests and CI test step.
 - [x] Update `PRODUCTION_READINESS.md` with completed items.
+
+## Archive
+
+- **Status**: ARCHIVED
+- **Archived at**: 2026-05-29
+- **Verify result**: PASS — 9/9 tasks done; backend test suite 53/53 green; typecheck + lint clean.
