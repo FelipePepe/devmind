@@ -105,7 +105,7 @@
 - [ ] **PWA / offline** — opcional, pero útil para reentrar a un proyecto sin conexión.
 
 ### Spec 005 (playwright-validation)
-- [ ] Convierte al agente en "el que prueba lo que genera". Hook `screenshot_blob_hash` ya emitido por 004. Es alcance de spec entera; alta prioridad funcional pero no bloqueador de prod.
+- [x] Convierte al agente en "el que prueba lo que genera". Implementado (spec 005, PR #14+#15, 2026-05-30). Migration 023, BrowserPool Chromium, 3 agent tools, Tests tab, EvidenceBlock. Flags OFF por defecto. Verificación completa con Ollama live queda como operador.
 
 ### Tool governance v2 (follow-up de spec 006)
 - [ ] **UI de confirmación per-call** para `destructive` cuando `autonomy_level=confirm-destructive` (que aún no existe como valor del flag).

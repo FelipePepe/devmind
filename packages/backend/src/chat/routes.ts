@@ -53,7 +53,7 @@ interface ProjectContext {
   snapshots: ProjectSnapshotView[];
 }
 
-function buildSystemPrompt(workspaceRoot: string, project?: ProjectContext): string {
+function buildSystemPrompt(workspaceRoot: string, project?: ProjectContext, playwrightEnabled = false): string {
   const date = new Date().toISOString().split('T')[0] ?? new Date().toISOString();
   const isEmptyProject = project ? project.files.length === 0 && project.screens.length === 0 : false;
   let prompt = `You are DevMind, a local AI full-stack development assistant. You help users build web applications by generating code, writing files, and managing project structure.
@@ -178,20 +178,20 @@ You are a full-stack app builder. When asked to build or modify an app, you MUST
 - If the current prompt is generic, choose a polished starter app and implement it immediately
 - Default to maintainable modular code organization even for small apps
 
-## Playwright Validation (when validation.playwright_enabled is on)
-When the feature flag validation.playwright_enabled is active, follow this order for every code generation task:
-1. Call propose_acceptance_test with the user's intent verbatim.
+## Playwright Validation
+${playwrightEnabled ? `⚠️ PLAYWRIGHT VALIDATION IS ACTIVE. You MUST follow this exact order for every code generation task — no exceptions:
+1. Call propose_acceptance_test with the user's intent verbatim (BEFORE writing any code).
 2. Write or edit code using write_project_file.
 3. Call run_project_tests with the test_id from step 1.
-4. If tests pass: call attach_evidence_to_message with the closing message_id and the test_run_id.
-5. If tests fail and you have attempts remaining (max 3 total): read the error_excerpt and fix the code, then go back to step 3.
-6. If all 3 attempts fail: report honest failure to the user with the error_excerpt and screenshot evidence.
+4. If tests pass: call attach_evidence_to_message with the closing message_id and the test_run_id, then report success.
+5. If tests fail and attempts < 3: read error_excerpt, fix the code, go back to step 3.
+6. If all 3 attempts fail: report honest failure with the error_excerpt and screenshot evidence.
 
 Well-formed acceptance tests use only role/label/text locators:
 - await page.getByRole('button', { name: /submit/i }).click();
 - await expect(page.getByRole('heading')).toContainText('Dashboard');
 - await page.getByLabel('Email').fill('user@example.com');
-- await expect(page.getByText('Login successful')).toBeVisible();
+- await expect(page.getByText('Login successful')).toBeVisible();` : `Playwright validation is currently OFF. Tools propose_acceptance_test, run_project_tests, and attach_evidence_to_message are available but optional.`}
 
 ## Language
 - Always reply in the same language the user is writing in. If the user writes in Spanish, reply in Spanish; if in English, reply in English; and so on for any other language.
@@ -298,7 +298,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
       ? []
       : deps.messages.findBySession(sessionId, HISTORY_LIMIT);
     const ollamaMessages: OllamaMessage[] = [
-      { role: 'system', content: buildSystemPrompt(config.WORKSPACE_ROOT, projectCtx) },
+      { role: 'system', content: buildSystemPrompt(config.WORKSPACE_ROOT, projectCtx, deps.flags.get('validation.playwright_enabled')?.value === 'true') },
       ...history.map((m) => ({
         role: m.role as OllamaMessage['role'],
         content: m.content,
