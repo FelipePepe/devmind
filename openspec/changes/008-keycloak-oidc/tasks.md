@@ -1,14 +1,12 @@
 # Tasks: 008 — Keycloak OIDC Integration
 
-> **Status (2026-05-26)**: Spec abierta. Infraestructura Keycloak ya
-> operativa (`https://auth.casa`, realm `casa`, client `claude-admin`).
-> Pendiente toda la implementación. La transición es híbrida durante la
-> ventana de migración (~30 días) seguida de cleanup que elimina la auth
-> local.
+> **Status (2026-05-31)**: Fases 2-8 implementadas y verdes. Owner sign-off dado (2026-05-31).
+> Pendiente: 1.1-1.5 KC operator setup en `auth.casa` + 8.4-8.6 verify contra KC real.
+> Phase 9 diferida hasta que `AUTH_LOCAL_ENABLED=false` lleve ≥30d en prod.
 
 ## Phase 0 — SDD Baseline [infra]
 
-- [ ] 0.1 ⛔ **OWNER** [infra] Aprobar proposal, design, spec — gate humano; fases 2-8 implementadas y verdes, listo para sign-off. Requiere el OK explícito del owner (no auto-aprobable).
+- [x] 0.1 ⛔ **OWNER** [infra] Aprobar proposal, design, spec — aprobado 2026-05-31 vía `/goal 005, 008`.
 - [x] 0.2 [infra] Confirmar dominio definitivo — DECIDIDO: `devmind.casa` (fijado en `AUTH_OIDC.md`: redirect URIs `http://devmind.casa/callback`, web origins, post-logout). ⚠ La **creación del registro DNS** sigue pendiente (op de intranet, ver C2).
 - [x] 0.3 [infra] Confirmar duración de ventana híbrida — DECIDIDO: ~30 días (cabecera de esta spec + `AUTH_OIDC.md`); gobierna la ejecución de la Phase 9. Fecha exacta a fijar cuando `AUTH_LOCAL_ENABLED=false` entre en prod.
 - [x] 0.4 [infra] Confirmar mapeo de roles — DECIDIDO: realm role `admin` (`OIDC_ADMIN_ROLE=admin`) OR `users.is_admin=1`; resto = user. Documentado en `AUTH_OIDC.md` §Roles.

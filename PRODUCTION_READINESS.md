@@ -105,7 +105,7 @@
 - [ ] **PWA / offline** — opcional, pero útil para reentrar a un proyecto sin conexión.
 
 ### Spec 005 (playwright-validation)
-- [ ] Convierte al agente en "el que prueba lo que genera". Hook `screenshot_blob_hash` ya emitido por 004. Es alcance de spec entera; alta prioridad funcional pero no bloqueador de prod.
+- [x] Playwright validation layer completo (spec 005 cerrado 2026-05-30). Migration 023: `project_tests` + `project_test_runs` + `messages.evidence_json`. BrowserPool (Chromium 148), worker handler `validate-with-playwright`, 3 agent tools, Tests tab en Builder, EvidenceBlock en chat. `docker compose build workers` → chromium resolvable + `playwright pool ready (size=2)` verificados 2026-05-31. Verificación E2E con Ollama live (9.5/9.8-9.11) pendiente operador.
 
 ### Tool governance v2 (follow-up de spec 006)
 - [ ] **UI de confirmación per-call** para `destructive` cuando `autonomy_level=confirm-destructive` (que aún no existe como valor del flag).

@@ -36,6 +36,8 @@ RUN mkdir -p /app/data /app/workspace /app/storage /app/vectors \
   && chown -R node:node /app/data /app/workspace /app/storage /app/vectors
 
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "process.exit(0)"
 

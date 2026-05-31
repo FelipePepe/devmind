@@ -26,6 +26,7 @@ export default defineConfig(({ mode }) => {
         '/api': backendUrl,
         '/auth': backendUrl,
         '/admin': backendUrl,
+        '/flags': backendUrl,
         '/ws': { target: backendWsUrl, ws: true },
       },
     },

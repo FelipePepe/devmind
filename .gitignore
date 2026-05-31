@@ -41,3 +41,8 @@ logs/
 # Playwright test artifacts
 test-results/
 playwright-report/
+
+# Core dumps and worker runtime artifacts
+core.*
+packages/workers/generated-projects/
+packages/workers/*.db
