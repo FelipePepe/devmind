@@ -114,7 +114,7 @@
 
 ### Datos
 - [x] **Exportación de proyectos** — `GET /api/projects/:id/export` devuelve JSON con metadata + files + manifest + services + API routes + database + env vars. Botón ↓ en Projects page y Builder sidebar.
-- [ ] **Importación** para mover entre instancias.
+- [x] **Importación** — `POST /api/projects/import` acepta el formato devmind-export v1.0, crea nuevo proyecto y restaura files, manifest, services, API routes, DB schemas+migrations, env vars (2026-06-01).
 - [ ] **GDPR / borrado de cuenta** — si va a haber usuarios reales que no sean tú.
 
 ### Performance & escala

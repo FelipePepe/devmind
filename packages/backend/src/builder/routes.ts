@@ -1093,6 +1093,160 @@ export function createBuilderRouter(
     });
   });
 
+  // Project import — restore a full export bundle as a new project
+  router.post('/projects/import', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const ImportSchema = z.object({
+      format: z.literal('devmind-export'),
+      version: z.string(),
+      project: z.object({
+        name: z.string().min(1),
+        description: z.string().nullish(),
+      }),
+      files: z.array(z.object({
+        path: z.string(),
+        content: z.string(),
+        language: z.string().nullish(),
+      })).default([]),
+      manifest: z.object({
+        version: z.string().nullish(),
+        app_type: z.string().nullish(),
+        stack_json: z.string().nullish(),
+        commands_json: z.string().nullish(),
+        entrypoints_json: z.string().nullish(),
+      }).nullable().default(null),
+      services: z.array(z.object({
+        kind: z.string(),
+        name: z.string(),
+        root_path: z.string(),
+        runtime: z.string(),
+        port: z.number().nullable().optional(),
+        config_json: z.string().nullish(),
+      })).default([]),
+      apiRoutes: z.array(z.object({
+        method: z.string(),
+        path: z.string(),
+        handler_path: z.string(),
+        request_schema_json: z.string().nullish(),
+        response_schema_json: z.string().nullish(),
+      })).default([]),
+      database: z.object({
+        schemas: z.array(z.object({
+          name: z.string(),
+          engine: z.string().nullish(),
+          schema_json: z.string().nullish(),
+        })).default([]),
+        migrations: z.array(z.object({
+          name: z.string(),
+          sql: z.string().optional(),
+          content: z.string().optional(),
+          applied_at: z.string().nullish(),
+        })).default([]),
+      }).default({ schemas: [], migrations: [] }),
+      envVars: z.array(z.object({
+        name: z.string(),
+        required: z.boolean().optional(),
+        secret_ref: z.string().nullable().optional(),
+        default_value: z.string().nullable().optional(),
+      })).default([]),
+    });
+
+    const parsed = ImportSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid export format', details: parsed.error.flatten() }, 400);
+    }
+
+    const data = parsed.data;
+    const project = projects.create(userId, data.project.name, data.project.description ?? undefined);
+    const pid = project.id;
+
+    for (const f of data.files) {
+      projectFiles.upsert(pid, f.path, f.content, f.language ?? undefined);
+    }
+
+    if (data.manifest) {
+      const m = data.manifest;
+      const safeJson = (s: string | null | undefined): Record<string, unknown> => {
+        if (!s) return {};
+        try { return JSON.parse(s) as Record<string, unknown>; } catch { return {}; }
+      };
+      const versionNum = m.version != null ? Number(m.version) : undefined;
+      projectManifests.upsert(pid, {
+        ...(versionNum !== undefined && { version: versionNum }),
+        appType: m.app_type ?? 'web',
+        stack: safeJson(m.stack_json),
+        commands: safeJson(m.commands_json) as Record<string, string>,
+        entrypoints: safeJson(m.entrypoints_json) as Record<string, string>,
+      });
+    }
+
+    for (const s of data.services) {
+      const safeJson = (v: string | null | undefined) => {
+        if (!v) return {};
+        try { return JSON.parse(v) as Record<string, unknown>; } catch { return {}; }
+      };
+      projectServices.create(pid, {
+        kind: s.kind as import('../db/repos/project-services.js').ProjectServiceKind,
+        name: s.name,
+        rootPath: s.root_path,
+        runtime: s.runtime,
+        port: s.port ?? null,
+        config: safeJson(s.config_json),
+      });
+    }
+
+    for (const r of data.apiRoutes) {
+      const safeJson = (v: string | null | undefined): Record<string, unknown> | undefined => {
+        if (!v) return undefined;
+        try { return JSON.parse(v) as Record<string, unknown>; } catch { return undefined; }
+      };
+      const requestSchema = safeJson(r.request_schema_json);
+      const responseSchema = safeJson(r.response_schema_json);
+      projectApiRoutes.upsert(pid, {
+        method: r.method as import('../db/repos/project-api-routes.js').ProjectApiRouteMethod,
+        path: r.path,
+        handlerPath: r.handler_path,
+        ...(requestSchema !== undefined && { requestSchema }),
+        ...(responseSchema !== undefined && { responseSchema }),
+      });
+    }
+
+    for (const s of data.database.schemas) {
+      const safeJson = (v: string | null | undefined): Record<string, unknown> => {
+        if (!v) return {};
+        try { return JSON.parse(v) as Record<string, unknown>; } catch { return {}; }
+      };
+      projectDbSchemas.upsert(pid, {
+        name: s.name,
+        ...(s.engine != null && { engine: s.engine }),
+        schema: safeJson(s.schema_json),
+      });
+    }
+
+    for (const m of data.database.migrations) {
+      projectDbMigrations.create(pid, { name: m.name, content: m.content ?? m.sql ?? '' });
+    }
+
+    for (const v of data.envVars) {
+      projectEnvVars.upsert(pid, {
+        name: v.name,
+        ...(v.required !== undefined && { required: v.required }),
+        secretRef: v.secret_ref ?? null,
+        defaultValue: v.default_value ?? null,
+      });
+    }
+
+    return c.json({ id: pid, name: project.name }, 201);
+  });
+
   // ── Playwright validation routes ────────────────────────────────────────────
 
   router.get('/projects/:id/tests', authMiddleware, (c) => {
