@@ -125,7 +125,7 @@
 ### Documentación
 - [x] **`OPERATIONS.md`**: cómo arrancar, parar, actualizar, restaurar, ver logs, debuggear.
 - [x] **`SECURITY.md`**: cómo reportar vulnerabilidades, política de actualizaciones.
-- [ ] **API docs**: OpenAPI/Swagger generado de las rutas Hono.
+- [x] **API docs**: OpenAPI 3.0 spec en `/api/openapi.json` (11 path groups: system, projects, files, snapshots, chat). Swagger UI en `/api/docs` con auth interceptor para JWT (2026-06-01).
 
 ---
 
