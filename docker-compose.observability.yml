@@ -1,0 +1,58 @@
+# Observability stack — run alongside docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Services:
+#   devmind-prometheus  — scrapes /api/metrics every 15s, evaluates alert rules
+#   devmind-grafana     — dashboard at http://maya.casa:3100 (admin/admin on first login)
+#
+# Prometheus UI:  http://maya.casa:9091
+# Grafana UI:     http://maya.casa:3100
+
+services:
+  devmind-prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: devmind-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - devmind-prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
+    networks:
+      - devmind
+
+  devmind-grafana:
+    image: grafana/grafana:12.0.1
+    container_name: devmind-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://maya.casa:3100
+      GF_ALERTING_ENABLED: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - devmind-grafana-data:/var/lib/grafana
+    ports:
+      - "3100:3000"
+    depends_on:
+      - devmind-prometheus
+    networks:
+      - devmind
+
+volumes:
+  devmind-prometheus-data:
+  devmind-grafana-data:
+
+networks:
+  devmind:
+    external: true
+    name: devmind_devmind-net

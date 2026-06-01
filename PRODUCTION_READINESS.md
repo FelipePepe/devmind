@@ -67,8 +67,8 @@
 - [x] **Logs estructurados a stdout** + recolección (Loki/Promtail, journald, lo que sea). Verificado: `packages/backend/src/logger.ts` instancia `pino` y emite una línea JSON por log con `level`, `time`, `pid`, `hostname`, `msg` y campos arbitrarios; trazas de error se serializan completas. La recolección (Loki/Promtail) sigue siendo trabajo de infra fuera del repo.
 - [x] **Métricas Prometheus**: request count/latency por endpoint, jobs en cola, tool calls por safety, duración de agent loops, hit rate del HNSW, ref_count de blobs. Base añadida en `/api/metrics` para uptime + HTTP count/duration; métricas profundas quedan como follow-up.
 - [ ] **Trazas distribuidas** opcional (OpenTelemetry) para correlacionar chat → agent loop → tools → DB.
-- [ ] **Alertas mínimas**: backend caído, workers parados, cola > N, Ollama down, latencia chat p99 > X, DB > Y GB.
-- [ ] **Dashboard básico** (Grafana) con esas métricas.
+- [x] **Alertas mínimas**: backend caído, workers parados, cola > N, Ollama down, DB > 5GB — 5 reglas en `observability/prometheus/alerts.yml` (2026-06-01). Latencia p95 disponible vía histogram pero sin alerta (threshold a definir en producción real).
+- [x] **Dashboard básico** (Grafana) — `observability/grafana/dashboards/devmind-overview.json` provisionado as-code (2026-06-01). 9 paneles: uptime, ollama up, db size, queue depth, http req rate, http p95 latency, queue timeseries, 5xx error rate.
 
 ### Backups & DR
 - [x] **Backup automático del SQLite** (snapshot WAL-safe, p.ej. `VACUUM INTO`). Diario + retención. Añadido `scripts/backup-sqlite.sh` y perfil `sqlite-backup`.

@@ -58,7 +58,7 @@ import { createBuilderRouter } from './builder/routes.js';
 import { authMiddleware, configureAuthMiddleware } from './auth/middleware.js';
 import { OllamaClient } from './ollama/client.js';
 import { corsMiddleware, securityHeadersMiddleware } from './http/security.js';
-import { MetricsRegistry } from './telemetry/metrics.js';
+import { MetricsRegistry, type LiveStats } from './telemetry/metrics.js';
 
 function normalizeRoute(path: string): string {
   return path
@@ -241,8 +241,22 @@ async function start(): Promise<void> {
     );
   });
 
-  app.get('/api/metrics', (c) => {
-    return c.text(metrics.render(), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
+  app.get('/api/metrics', async (c) => {
+    const queueStats = jobs.stats();
+    const ollamaBaseUrl = settingsRepo.get('ollama.base_url') ?? config.OLLAMA_BASE_URL;
+    const ollamaUp = await withTimeout(new OllamaClient(ollamaBaseUrl).health(), 2000, false);
+    const dbSizeBytes: number = (() => {
+      try {
+        const row = db.prepare('SELECT page_count * page_size AS sz FROM pragma_page_count(), pragma_page_size()').get() as { sz: number } | undefined;
+        return row?.sz ?? 0;
+      } catch { return 0; }
+    })();
+    const live: LiveStats = {
+      workers: { pending: queueStats.pending, processing: queueStats.processing, failed: queueStats.failed, lagMs: queueStats.oldestPendingAgeMs },
+      ollamaUp,
+      dbSizeBytes,
+    };
+    return c.text(metrics.render(live), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
   });
 
   app.route(
