@@ -17,6 +17,7 @@ export default function Projects() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -37,6 +38,27 @@ export default function Projects() {
       setError(err instanceof Error ? err.message : 'Failed to delete project');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const importProject = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsImporting(true);
+    setError(null);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text) as unknown;
+      const project = await apiFetch<{ id: string; name: string }>('/api/projects/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json),
+      });
+      navigate(`/projects/${project.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed');
+      setIsImporting(false);
     }
   };
 
@@ -101,6 +123,31 @@ export default function Projects() {
               {isCreating ? 'Creating…' : 'Create project'}
             </button>
           </form>
+
+          <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--border-subtle)' }}>
+            <label
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)',
+                padding: 'var(--space-2) var(--space-3)',
+                fontSize: 'var(--text-sm)', color: 'var(--text-secondary)',
+                border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-md)',
+                cursor: isImporting ? 'not-allowed' : 'pointer',
+                opacity: isImporting ? 0.5 : 1,
+                transition: 'color 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={(e) => { if (!isImporting) { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-strong)'; } }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+            >
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                disabled={isImporting}
+                onChange={(e) => void importProject(e)}
+              />
+              {isImporting ? 'Importing…' : '↑ Import from export bundle'}
+            </label>
+          </div>
         </section>
 
         <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
