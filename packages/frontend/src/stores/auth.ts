@@ -7,6 +7,10 @@ import { isOidcConfigured, readCallback, signinRedirect, signoutRedirect } from 
 type AuthSource = 'local' | 'oidc';
 const SOURCE_KEY = 'auth.source';
 
+// Module-level flag: prevents double-invoke from React StrictMode or re-renders.
+// Lives outside React so it survives unmount/remount cycles.
+let _oidcCallbackInFlight = false;
+
 function readSource(): AuthSource | null {
   const value = sessionStorage.getItem(SOURCE_KEY);
   return value === 'local' || value === 'oidc' ? value : null;
@@ -215,6 +219,9 @@ export const useAuthStore = create<AuthState>(() => ({
   },
 
   handleOidcCallback: async () => {
+    if (_oidcCallbackInFlight) return;
+    if (!new URLSearchParams(window.location.search).get('code')) return;
+    _oidcCallbackInFlight = true;
     useAuthStore.setState({ isLoading: true });
     try {
       const params = readCallback();
@@ -225,6 +232,7 @@ export const useAuthStore = create<AuthState>(() => ({
       });
       applyAuthState(normalizeOidcResponse(res), 'oidc');
     } catch (err) {
+      _oidcCallbackInFlight = false;
       console.error('[ERROR][auth] OIDC callback failed:', err);
       useLogStore.getState().addEntry({
         type: 'error',

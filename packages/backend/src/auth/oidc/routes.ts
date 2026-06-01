@@ -74,7 +74,7 @@ async function exchangeAtKeycloak(form: URLSearchParams): Promise<KeycloakTokenR
 function setRefreshCookie(c: Parameters<typeof setCookie>[0], refreshToken: string, ttlMs: number): void {
   setCookie(c, OIDC_REFRESH_COOKIE, refreshToken, {
     httpOnly: true,
-    sameSite: 'Strict',
+    sameSite: 'Lax',
     path: '/',
     maxAge: Math.max(60, Math.floor(ttlMs / 1000)),
     secure: config.COOKIE_SECURE ?? (config.NODE_ENV === 'production'),

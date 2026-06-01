@@ -34,10 +34,12 @@ services:
       - /mnt/nas/sources/devmind/data:/app/data
       - devmind-workspace:/app/workspace
       - devmind-node-modules:/app/node_modules
+      - /mnt/nas/sources/casa-ca/ca.crt:/etc/ssl/casa-ca.crt:ro
     environment:
       - NODE_ENV=development
       - PORT=3001
       - DB_PATH=/app/data/devmind.db
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/casa-ca.crt
     env_file:
       - .env
     networks:

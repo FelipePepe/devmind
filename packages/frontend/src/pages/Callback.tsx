@@ -21,10 +21,6 @@ export default function Callback() {
       });
   }, [handleOidcCallback, navigate]);
 
-  useEffect(() => {
-    if (user && !error) navigate('/projects', { replace: true });
-  }, [user, error, navigate]);
-
   return (
     <div
       style={{
