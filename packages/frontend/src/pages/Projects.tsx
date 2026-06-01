@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../lib/api.js';
+
+interface Template {
+  id: string;
+  name: string;
+  description: string;
+}
 
 interface Project {
   id: string;
@@ -16,16 +22,22 @@ export default function Projects() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('blank');
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     apiFetch<Project[]>('/api/projects')
       .then(setProjects)
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load projects'))
       .finally(() => setIsLoadingProjects(false));
+    apiFetch<Template[]>('/api/project-templates')
+      .then(setTemplates)
+      .catch(() => { /* non-fatal */ });
   }, []);
 
   const deleteProject = async (id: string, name: string) => {
@@ -68,14 +80,23 @@ export default function Projects() {
     setIsCreating(true);
     setError(null);
     try {
-      const project = await apiFetch<Project>('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          ...(description.trim() ? { description: description.trim() } : {}),
-        }),
-      });
+      let project: Project;
+      if (selectedTemplate && selectedTemplate !== 'blank') {
+        project = await apiFetch<Project>(`/api/project-templates/${selectedTemplate}/instantiate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() }),
+        });
+      } else {
+        project = await apiFetch<Project>('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            ...(description.trim() ? { description: description.trim() } : {}),
+          }),
+        });
+      }
       setProjects((prev) => [project, ...prev]);
       setName('');
       setDescription('');
@@ -103,21 +124,58 @@ export default function Projects() {
 
           <form onSubmit={(e) => void createProject(e)} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             <input
+              ref={nameInputRef}
               className="input"
               placeholder="Project name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isCreating}
             />
-            <textarea
-              className="input"
-              placeholder="What are you building?"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isCreating}
-              rows={5}
-              style={{ resize: 'vertical', minHeight: '120px' }}
-            />
+            {templates.length > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)' }}>
+                  Starter template
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {templates.map((t) => (
+                    <label
+                      key={t.id}
+                      style={{
+                        display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start',
+                        padding: '6px 8px', borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        background: selectedTemplate === t.id ? 'var(--bg-surface-2)' : 'transparent',
+                        border: selectedTemplate === t.id ? '1px solid var(--border-default)' : '1px solid transparent',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="template"
+                        value={t.id}
+                        checked={selectedTemplate === t.id}
+                        onChange={() => setSelectedTemplate(t.id)}
+                        style={{ marginTop: '2px', flexShrink: 0 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: selectedTemplate === t.id ? 'var(--weight-medium)' : undefined }}>{t.name}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '1px' }}>{t.description}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {selectedTemplate === 'blank' && (
+              <textarea
+                className="input"
+                placeholder="What are you building?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                disabled={isCreating}
+                rows={4}
+                style={{ resize: 'vertical', minHeight: '96px' }}
+              />
+            )}
             {error && <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)' }}>{error}</div>}
             <button className="btn btn-primary" type="submit" disabled={isCreating || !name.trim()} style={{ justifyContent: 'center' }}>
               {isCreating ? 'Creating…' : 'Create project'}

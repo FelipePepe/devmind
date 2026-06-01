@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { PROJECT_TEMPLATES } from './templates.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { authMiddleware } from '../auth/middleware.js';
 import { config } from '../config.js';
@@ -228,6 +229,41 @@ export function createBuilderRouter(
   jobs: JobQueueClient
 ): Hono<HonoEnv> {
   const router = new Hono<HonoEnv>();
+
+  // Project templates — list available starter kits
+  router.get('/project-templates', authMiddleware, (c) => {
+    return c.json(PROJECT_TEMPLATES.map(({ id, name, description }) => ({ id, name, description })));
+  });
+
+  // Create project from template
+  router.post('/project-templates/:id/instantiate', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const templateId = c.req.param('id');
+    const template = PROJECT_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return c.json({ error: 'Template not found' }, 404);
+
+    const body = await c.req.json().catch(() => ({})) as { name?: string };
+    const name = body.name?.trim() || template.name;
+
+    const project = projects.create(userId, name, template.description);
+    const pid = project.id;
+
+    for (const f of template.files) {
+      projectFiles.upsert(pid, f.path, f.content, f.language);
+    }
+
+    if (template.manifest) {
+      const m = template.manifest;
+      projectManifests.upsert(pid, {
+        appType: m.appType,
+        stack: m.stack,
+        commands: m.commands as Record<string, string>,
+        entrypoints: m.entrypoints as Record<string, string>,
+      });
+    }
+
+    return c.json(project, 201);
+  });
 
   router.get('/projects', authMiddleware, (c) => {
     const userId = c.get('userId');

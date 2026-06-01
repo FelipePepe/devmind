@@ -274,6 +274,20 @@ export function createAuthRouter(
     return c.json({ ok: true });
   });
 
+  router.delete('/me', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const body = await c.req.json().catch(() => ({})) as { confirm?: string };
+    if (body.confirm !== 'delete my account') {
+      return c.json({ error: 'Send { "confirm": "delete my account" } to confirm deletion' }, 400);
+    }
+    const refreshToken = getCookie(c, REFRESH_COOKIE);
+    if (refreshToken) refreshTokens.revokeToken(refreshToken, 'logout');
+    deleteCookie(c, REFRESH_COOKIE, { path: '/' });
+    users.delete(userId);
+    logger.info({ userId }, 'Auth: account deleted (GDPR)');
+    return c.json({ ok: true });
+  });
+
   router.post('/ws-ticket', authMiddleware, (c) => {
     const userId = c.get('userId');
     const ticket = makeToken();

@@ -32,9 +32,9 @@ export function TopBar() {
             <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!isOpen)}>
               Console{entryCount > 0 ? ` (${entryCount})` : ''}
             </button>
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            <Link to="/account" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textDecoration: 'none' }}>
               {user.display_name ?? user.username}
-            </span>
+            </Link>
             <button className="btn btn-ghost btn-sm" onClick={() => void logout()}>Logout</button>
           </div>
         </>

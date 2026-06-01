@@ -115,6 +115,10 @@ export class UsersRepo {
     return this.db.prepare('SELECT * FROM users ORDER BY created_at DESC').all() as User[];
   }
 
+  delete(id: string): void {
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
   private uniqueUsername(base: string): string {
     const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) || `user_${crypto.randomUUID().slice(0, 8)}`;
     if (!this.findByUsername(cleaned)) return cleaned;

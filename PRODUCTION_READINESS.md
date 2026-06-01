@@ -115,7 +115,7 @@
 ### Datos
 - [x] **Exportación de proyectos** — `GET /api/projects/:id/export` devuelve JSON con metadata + files + manifest + services + API routes + database + env vars. Botón ↓ en Projects page y Builder sidebar.
 - [x] **Importación** — `POST /api/projects/import` acepta el formato devmind-export v1.0, crea nuevo proyecto y restaura files, manifest, services, API routes, DB schemas+migrations, env vars (2026-06-01).
-- [ ] **GDPR / borrado de cuenta** — si va a haber usuarios reales que no sean tú.
+- [x] **GDPR / borrado de cuenta** — `DELETE /auth/me` con body `{"confirm":"delete my account"}` borra el usuario y todos sus datos por CASCADE. Página `/account` accesible desde el username en TopBar con botón de confirmación en dos pasos (2026-06-01).
 
 ### Performance & escala
 - [ ] **HNSW reindex incremental** funcional bajo carga real (verificado en spec 002-fase-6; revalidar con un repo grande real).
@@ -133,7 +133,7 @@
 
 - [ ] Modo invitado / demo público.
 - [ ] Métricas de uso por usuario.
-- [ ] Plantillas de proyecto (starter kits).
+- [x] Plantillas de proyecto (starter kits) — 4 templates: Blank, Web app, Node.js REST API, Fullstack React+Express. `GET /api/project-templates` + `POST /api/project-templates/:id/instantiate`. Selector de template en la UI de creación (2026-06-01).
 - [ ] Integración con git remoto (push del proyecto generado a GitHub).
 - [ ] i18n del frontend.
 
