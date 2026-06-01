@@ -33,6 +33,7 @@ export interface AgentLoopOptions {
   // Spec 006 — passed through to ToolExecutor for audit log + autonomy gate.
   toolAudit?: ToolCallAuditRepo;
   flags?: FlagsRepo;
+  projectId?: string;
 }
 
 /**
@@ -42,8 +43,8 @@ export interface AgentLoopOptions {
  * 3. If finish_reason === stop (or max iterations reached) → done
  */
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
-  const { model, registry, ctx, callbacks, toolAudit, flags } = opts;
-  const executor = new ToolExecutor(registry, toolAudit, flags);
+  const { model, registry, ctx, callbacks, toolAudit, flags, projectId } = opts;
+  const executor = new ToolExecutor(registry, toolAudit, flags, projectId);
   const tools = registry.getOllamaTools();
 
   const messages: OllamaMessage[] = [...opts.messages];

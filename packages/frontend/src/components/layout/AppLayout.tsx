@@ -15,6 +15,7 @@ const UsersAdmin = lazy(() => import('../../pages/admin/Users.js'));
 const JobsAdmin = lazy(() => import('../../pages/admin/Jobs.js'));
 const OllamaSettings = lazy(() => import('../../pages/admin/OllamaSettings.js'));
 const Account = lazy(() => import('../../pages/Account.js'));
+const StatsAdmin = lazy(() => import('../../pages/admin/Stats.js'));
 
 function PageLoader() {
   return (
@@ -68,6 +69,7 @@ export default function AppLayout() {
         <Route path="/admin/jobs" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Jobs"><JobsAdmin /></Page></div></AdminRoute>} />
         <Route path="/admin/ollama" element={<AuthRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Ollama settings"><OllamaSettings /></Page></div></AuthRoute>} />
         <Route path="/account" element={<AuthRoute><Page scope="Account"><Account /></Page></AuthRoute>} />
+        <Route path="/admin/stats" element={<AdminRoute><div style={{ gridColumn: '1 / -1', overflowY: 'auto' }}><Page scope="Stats"><StatsAdmin /></Page></div></AdminRoute>} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
       <ErrorBoundary scope="Log panel">

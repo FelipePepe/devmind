@@ -171,7 +171,7 @@ async function start(): Promise<void> {
   app.route('/auth/oidc', createOidcRouter(users));
   app.route('/api/artifacts', createStorageRouter(storage));
   app.route('/', createFlagsRouter(flagsService));
-  app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots, toolAudit));
+  app.route('/admin', createAdminRouter(users, jobs, settingsRepo, projectSnapshots, toolAudit, flags, db));
   app.route('/api/sessions', createSessionsRouter(sessions, messages));
   app.route('/api/chat', createChatRouter({
     sessions,

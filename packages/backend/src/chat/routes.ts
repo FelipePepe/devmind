@@ -367,6 +367,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
         registry,
         toolAudit: deps.toolAudit,
         flags: deps.flags,
+        ...(projectId !== undefined && { projectId }),
         ctx: {
           userId,
           sessionId,

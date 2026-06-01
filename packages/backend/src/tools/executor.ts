@@ -22,7 +22,8 @@ export class ToolExecutor {
     // only the registry — audit writes are skipped in that case and the gate
     // falls back to 'auto'.
     private readonly audit?: ToolCallAuditRepo,
-    private readonly flags?: FlagsRepo
+    private readonly flags?: FlagsRepo,
+    private readonly projectId?: string
   ) {}
 
   async execute(call: OllamaToolCall, ctx: ToolContext): Promise<ToolResult> {
@@ -129,12 +130,19 @@ export class ToolExecutor {
   private autonomyLevel(): 'auto' | 'block-destructive' {
     if (!this.flags) return 'auto';
     try {
-      const flag = this.flags.get('tools.autonomy_level');
-      if (!flag) return 'auto';
-      // FlagsRepo stores values as JSON-encoded strings; parse before comparing.
-      let parsed: unknown = flag.value;
-      try { parsed = JSON.parse(flag.value); } catch { /* raw string fallback */ }
-      return parsed === 'block-destructive' ? 'block-destructive' : 'auto';
+      // Project-level override takes precedence over the global flag.
+      const flagKeys = this.projectId
+        ? [`tools.autonomy_level.${this.projectId}`, 'tools.autonomy_level']
+        : ['tools.autonomy_level'];
+
+      for (const key of flagKeys) {
+        const flag = this.flags.get(key);
+        if (!flag) continue;
+        let parsed: unknown = flag.value;
+        try { parsed = JSON.parse(flag.value); } catch { /* raw string fallback */ }
+        return parsed === 'block-destructive' ? 'block-destructive' : 'auto';
+      }
+      return 'auto';
     } catch (err) {
       logger.warn({ err }, 'Failed to read tools.autonomy_level flag, defaulting to auto');
       return 'auto';

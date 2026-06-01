@@ -109,7 +109,7 @@
 
 ### Tool governance v2 (follow-up de spec 006)
 - [ ] **UI de confirmación per-call** para `destructive` cuando `autonomy_level=confirm-destructive` (que aún no existe como valor del flag).
-- [ ] **Per-project / per-user autonomy overrides**.
+- [x] **Per-project autonomy overrides** — flag `tools.autonomy_level.${projectId}` leída por `ToolExecutor` antes del flag global. `PUT/GET /admin/projects/:id/autonomy` para gestionar. `FlagsRepo.delete()` añadido (2026-06-01).
 - [x] **Retention/purga del audit log** — `TOOL_AUDIT_RETENTION_DAYS` (default 30d) + timer horario `pruneOlderThan()` en `index.ts`. Desactivable con `TOOL_AUDIT_RETENTION_DAYS=0`.
 
 ### Datos
@@ -132,7 +132,7 @@
 ## 🟢 Nice-to-have
 
 - [ ] Modo invitado / demo público.
-- [ ] Métricas de uso por usuario.
+- [x] Métricas de uso por usuario — `GET /admin/stats` agrega projects/sessions/messages/agent_runs/tool_calls + last_active por usuario. Página `/admin/stats` con tabla + totals en el admin (2026-06-01).
 - [x] Plantillas de proyecto (starter kits) — 4 templates: Blank, Web app, Node.js REST API, Fullstack React+Express. `GET /api/project-templates` + `POST /api/project-templates/:id/instantiate`. Selector de template en la UI de creación (2026-06-01).
 - [ ] Integración con git remoto (push del proyecto generado a GitHub).
 - [ ] i18n del frontend.
