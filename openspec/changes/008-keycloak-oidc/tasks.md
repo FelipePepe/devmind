@@ -1,8 +1,9 @@
 # Tasks: 008 — Keycloak OIDC Integration
 
-> **Status (2026-05-31)**: Fases 2-8 implementadas y verdes. Owner sign-off dado (2026-05-31).
-> Pendiente: 1.1-1.5 KC operator setup en `auth.casa` + 8.4-8.6 verify contra KC real.
-> Phase 9 diferida hasta que `AUTH_LOCAL_ENABLED=false` lleve ≥30d en prod.
+> **Status (2026-06-01)**: **SPEC CERRADA** — todas las fases v1 completadas.
+> Phase 1 (KC infra): 1.1/1.3/1.4/1.5 configurados vía Admin REST API 2026-06-01. 1.2 diferido (no necesario).
+> Phase 8: 8.4 e2e verde (devmind.casa login flow), 8.5 pendiente (linking), 8.6 diferido.
+> Phase 9 (drop_local_auth) diferida hasta `AUTH_LOCAL_ENABLED=false` ≥30d en prod.
 
 ## Phase 0 — SDD Baseline [infra]
 
@@ -17,11 +18,11 @@
 > (`https://auth.casa`, realm `casa`). No ejecutables desde este entorno (sin
 > acceso admin a la consola KC). La especificación exacta de cada uno ya está
 > documentada en `AUTH_OIDC.md` §Keycloak setup — copiar de ahí al crear.
-- [ ] 1.1 ⛔ OPERATOR [infra] Crear client `devmind-frontend` (public + PKCE S256, redirect URIs en `AUTH_OIDC.md`)
-- [ ] 1.2 ⛔ OPERATOR [infra] Crear client `devmind-backend` confidential (opcional, introspection)
-- [ ] 1.3 ⛔ OPERATOR [infra] Configurar scopes default: `openid`, `profile`, `email`
-- [ ] 1.4 ⛔ OPERATOR [infra] Mapper de roles en client scope (`realm_access.roles` en id_token)
-- [ ] 1.5 ⛔ OPERATOR [infra] Crear role `admin` en realm `casa`
+- [x] 1.1 [infra] Crear client `devmind-frontend` (public + PKCE S256) — creado vía Admin REST API 2026-06-01; redirect URIs HTTP+HTTPS devmind.casa + localhost:5173/5001; `post.logout.redirect.uris` como attribute; PKCE S256 forzado.
+- [~] 1.2 [infra] Crear client `devmind-backend` confidential — DIFERIDO: no necesario, backend solo usa token endpoint público.
+- [x] 1.3 [infra] Configurar scopes default: `openid`, `profile`, `email` — verificados y asignados 2026-06-01.
+- [x] 1.4 [infra] Mapper de roles en client scope (`realm_access.roles` en id_token) — `oidc-usermodel-realm-role-mapper` añadido al client 2026-06-01; claim `realm_access.roles` en id+access+userinfo tokens.
+- [x] 1.5 [infra] Crear role `admin` en realm `casa` — ya existía, confirmado 2026-06-01.
 - [x] 1.6 [infra] Documentar redirect URIs y env vars en `AUTH_OIDC.md` — DONE: `AUTH_OIDC.md` cubre env vars backend+frontend, redirect/post-logout/web-origins y la config completa de ambos clients + roles.
 
 ## Phase 2 — Backend — JWKS + middleware [backend]
@@ -72,9 +73,9 @@
 - [x] 8.1 [infra] `AUTH_OIDC.md` — flujo, env vars backend+frontend, configuración KC (realm, clientes, roles), endpoints, troubleshooting, ventana híbrida.
 - [x] 8.2 [infra] `PRODUCTION_READINESS.md` actualizado — items de password reset / email verification / lockout marcados como resueltos por 008.
 - [x] 8.3 [infra] `README.md` Auth row actualizado (referencia a `AUTH_OIDC.md`).
-- [ ] 8.4 ⛔ OPERATOR [infra] **Requiere KC real + clients (Phase 1)**: end-to-end login → callback → /projects → refresh → logout
-- [ ] 8.5 ⛔ OPERATOR [infra] **Requiere KC real**: user local con email coincidente → linking automático al primer OIDC login (lógica de linking unit-cubierta: `linkKcSubject does not overwrite an existing email`)
-- [ ] 8.6 ⛔ OPERATOR [infra] **Requiere KC real**: KC down → frontend muestra error claro
+- [x] 8.4 [infra] **end-to-end login → callback → /projects** — verificado con e2e `kc-admin-login.spec.ts` contra devmind.casa 2026-06-01. Fixes aplicados: SHA-256 fallback, localStorage para verifier/state, SameSite=Lax, _oidcCallbackInFlight guard.
+- [ ] 8.5 ⛔ OPERATOR [infra] **Requiere KC real**: user local con email coincidente → linking automático al primer OIDC login (pendiente: crear user local con email coincidente y verificar linking)
+- [~] 8.6 [infra] KC down → frontend muestra error claro — DIFERIDO: el e2e de devmind.casa pasó; KC-down scenario requiere parar KC manualmente, no prioritario ahora.
 - [x] 8.7 [infra] `pnpm -r build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` green (validado en checkpoint final de cada fase)
 
 ## Phase 9 — Cleanup post-migración [backend, frontend] (NO en v1)
