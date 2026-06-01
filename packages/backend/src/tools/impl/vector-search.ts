@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { ollamaClient } from '../../ollama/client.js';
+import { getCached, setCached } from '../../ollama/embed-cache.js';
 import type { ToolDef } from '../types.js';
 
 const VectorSearchInput = z.object({
@@ -105,10 +106,16 @@ export const vectorSearchTool: ToolDef = {
 
     let queryEmbedding: number[];
     try {
-      const embeddings = await ollamaClient.embed(config.OLLAMA_EMBED_MODEL, [query]);
-      const first = embeddings[0];
-      if (!first) return JSON.stringify({ error: 'Embed returned empty result' });
-      queryEmbedding = first;
+      const cached = getCached(config.OLLAMA_EMBED_MODEL, query);
+      if (cached) {
+        queryEmbedding = cached;
+      } else {
+        const embeddings = await ollamaClient.embed(config.OLLAMA_EMBED_MODEL, [query]);
+        const first = embeddings[0];
+        if (!first) return JSON.stringify({ error: 'Embed returned empty result' });
+        queryEmbedding = first;
+        setCached(config.OLLAMA_EMBED_MODEL, query, queryEmbedding);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return JSON.stringify({ error: `Embed failed: ${msg}` });

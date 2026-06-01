@@ -59,6 +59,7 @@ import { authMiddleware, configureAuthMiddleware } from './auth/middleware.js';
 import { OllamaClient } from './ollama/client.js';
 import { corsMiddleware, securityHeadersMiddleware } from './http/security.js';
 import { MetricsRegistry, type LiveStats } from './telemetry/metrics.js';
+import { getEmbedCacheStats } from './ollama/embed-cache.js';
 
 function normalizeRoute(path: string): string {
   return path
@@ -251,10 +252,12 @@ async function start(): Promise<void> {
         return row?.sz ?? 0;
       } catch { return 0; }
     })();
+    const embedCache = getEmbedCacheStats();
     const live: LiveStats = {
       workers: { pending: queueStats.pending, processing: queueStats.processing, failed: queueStats.failed, lagMs: queueStats.oldestPendingAgeMs },
       ollamaUp,
       dbSizeBytes,
+      embedCache: { size: embedCache.size, hits: embedCache.hits, misses: embedCache.misses },
     };
     return c.text(metrics.render(live), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
   });

@@ -2,6 +2,7 @@ export interface LiveStats {
   workers: { pending: number; processing: number; failed: number; lagMs: number };
   ollamaUp: boolean;
   dbSizeBytes: number;
+  embedCache: { size: number; hits: number; misses: number };
 }
 
 const HTTP_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
@@ -89,6 +90,19 @@ export class MetricsRegistry {
       '# HELP devmind_db_size_bytes SQLite database file size in bytes.',
       '# TYPE devmind_db_size_bytes gauge',
       `devmind_db_size_bytes ${live.dbSizeBytes}`,
+    );
+
+    // ── embed cache ──────────────────────────────────────────────────────────
+    lines.push(
+      '# HELP devmind_embed_cache_size Number of embeddings currently in the LRU cache.',
+      '# TYPE devmind_embed_cache_size gauge',
+      `devmind_embed_cache_size ${live.embedCache.size}`,
+      '# HELP devmind_embed_cache_hits_total Total embedding cache hits.',
+      '# TYPE devmind_embed_cache_hits_total counter',
+      `devmind_embed_cache_hits_total ${live.embedCache.hits}`,
+      '# HELP devmind_embed_cache_misses_total Total embedding cache misses.',
+      '# TYPE devmind_embed_cache_misses_total counter',
+      `devmind_embed_cache_misses_total ${live.embedCache.misses}`,
     );
 
     return `${lines.join('\n')}\n`;

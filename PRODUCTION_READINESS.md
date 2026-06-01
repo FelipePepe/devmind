@@ -119,7 +119,7 @@
 
 ### Performance & escala
 - [ ] **HNSW reindex incremental** funcional bajo carga real (verificado en spec 002-fase-6; revalidar con un repo grande real).
-- [ ] **Caché de embeddings** (Ollama embed es lento).
+- [x] **Caché de embeddings** — LRU + TTL (512 entradas, 1h) en `src/ollama/embed-cache.ts`. Wired en `vector_search` tool; mismas queries no re-embedden. Métricas `devmind_embed_cache_hits_total/misses_total/size` en `/api/metrics` (2026-06-01).
 - [ ] **Load test** del flujo chat para conocer el techo.
 
 ### Documentación
