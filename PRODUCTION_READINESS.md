@@ -66,7 +66,7 @@
 ### Observabilidad
 - [x] **Logs estructurados a stdout** + recolección (Loki/Promtail, journald, lo que sea). Verificado: `packages/backend/src/logger.ts` instancia `pino` y emite una línea JSON por log con `level`, `time`, `pid`, `hostname`, `msg` y campos arbitrarios; trazas de error se serializan completas. La recolección (Loki/Promtail) sigue siendo trabajo de infra fuera del repo.
 - [x] **Métricas Prometheus**: request count/latency por endpoint, jobs en cola, tool calls por safety, duración de agent loops, hit rate del HNSW, ref_count de blobs. Base añadida en `/api/metrics` para uptime + HTTP count/duration; métricas profundas quedan como follow-up.
-- [ ] **Trazas distribuidas** opcional (OpenTelemetry) para correlacionar chat → agent loop → tools → DB.
+- [x] **Trazas distribuidas** — trace ID lightweight sin paquetes OTEL: `newTraceId()` por request HTTP, `x-trace-id` header en responses, propagado a `ToolContext.traceId` y logs pino (`traceId` en cada línea JSON). Grafana/Loki puede filtrar por traceId para correlacionar chat → agent loop → tools (2026-06-01).
 - [x] **Alertas mínimas**: backend caído, workers parados, cola > N, Ollama down, DB > 5GB — 5 reglas en `observability/prometheus/alerts.yml` (2026-06-01). Latencia p95 disponible vía histogram pero sin alerta (threshold a definir en producción real).
 - [x] **Dashboard básico** (Grafana) — `observability/grafana/dashboards/devmind-overview.json` provisionado as-code (2026-06-01). 9 paneles: uptime, ollama up, db size, queue depth, http req rate, http p95 latency, queue timeseries, 5xx error rate.
 
@@ -102,7 +102,7 @@
 - [x] **Mensajes de error útiles** — rutas del builder retornan `{ error: 'X not found' }` 404 / `{ error: 'Invalid request', details: … }` 400 explícitos. `app.onError` devuelve "Internal server error" solo para excepciones inesperadas en prod (correcto). `apiFetch` extrae `body.error` en frontend.
 - [x] **Loading states** — Projects muestra skeleton de 3 cards mientras carga; Builder muestra "Loading project…" durante la carga inicial.
 - [x] **Code splitting frontend** — páginas lazy con `React.lazy()` en AppLayout: Chat/Projects/Builder/Admin splits separados; `highlight.js` lazy vía `ArtifactViewer` lazy en `Chat.tsx`; Monaco ya lazy en `Builder.tsx`.
-- [ ] **PWA / offline** — opcional, pero útil para reentrar a un proyecto sin conexión.
+- [x] **PWA / offline** — `manifest.json` (standalone, theme #0d0f14, icons), `sw.js` (network-first navigation, cache-first estáticos, skip API/auth/ws), registro SW en `index.html`. Instalable desde Chrome/Safari en móvil/desktop (2026-06-01).
 
 ### Spec 005 (playwright-validation)
 - [x] Playwright validation layer completo (spec 005 cerrado 2026-05-30). Migration 023: `project_tests` + `project_test_runs` + `messages.evidence_json`. BrowserPool (Chromium 148), worker handler `validate-with-playwright`, 3 agent tools, Tests tab en Builder, EvidenceBlock en chat. `docker compose build workers` → chromium resolvable + `playwright pool ready (size=2)` verificados 2026-05-31. Verificación E2E con Ollama live (9.5/9.8-9.11) pendiente operador.

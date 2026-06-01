@@ -374,6 +374,7 @@ export function createChatRouter(deps: ChatRouterDeps): Hono<HonoEnv> {
           workspaceRoot: config.WORKSPACE_ROOT,
           agentRunId: agentRun.id,
           ...(projectId !== undefined ? { projectId } : {}),
+          ...((() => { const t = c.get('traceId' as never) as string | undefined; return t ? { traceId: t } : {}; })()),
           signal: abort.signal,
         },
         callbacks: {

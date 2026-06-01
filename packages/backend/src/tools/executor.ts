@@ -110,6 +110,7 @@ export class ToolExecutor {
     // ----- 5-8. Execute under audit + timeout ----------------------------
     const auditId = this.writeStart(ctx, tool, call.function.arguments);
     const start = Date.now();
+    logger.info({ traceId: ctx.traceId, tool: tool.name, safety, agentRunId: ctx.agentRunId }, 'tool start');
 
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => timeoutController.abort(), TOOL_TIMEOUT_MS);

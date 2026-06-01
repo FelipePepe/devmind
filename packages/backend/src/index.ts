@@ -61,6 +61,7 @@ import { corsMiddleware, securityHeadersMiddleware } from './http/security.js';
 import { MetricsRegistry, type LiveStats } from './telemetry/metrics.js';
 import { getEmbedCacheStats } from './ollama/embed-cache.js';
 import { openapiSpec } from './openapi/spec.js';
+import { newTraceId } from './telemetry/trace.js';
 
 function normalizeRoute(path: string): string {
   return path
@@ -144,15 +145,18 @@ async function start(): Promise<void> {
   app.use('*', securityHeadersMiddleware);
   app.use('*', corsMiddleware);
 
-  // Global request logging
+  // Global request logging + trace ID injection
   app.use('*', async (c, next) => {
+    const traceId = (c.req.header('x-trace-id') as string | undefined) ?? newTraceId();
+    c.set('traceId' as never, traceId);
     const start = Date.now();
     await next();
     const duration = Date.now() - start;
     const route = normalizeRoute(new URL(c.req.url).pathname);
     metrics.recordHttp(c.req.method, route, c.res.status, duration);
+    c.res.headers.set('x-trace-id', traceId);
     logger.info(
-      { method: c.req.method, path: c.req.url, status: c.res.status, duration_ms: duration },
+      { traceId, method: c.req.method, path: c.req.url, status: c.res.status, duration_ms: duration },
       'HTTP'
     );
   });

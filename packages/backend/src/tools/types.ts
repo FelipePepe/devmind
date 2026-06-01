@@ -8,6 +8,8 @@ export interface ToolContext {
   projectId?: string;
   /** Agent run that produced this call. Used by the executor to write audit rows. */
   agentRunId?: string;
+  /** Trace ID threaded from the originating HTTP request for log correlation. */
+  traceId?: string;
   signal?: AbortSignal;
 }
 
