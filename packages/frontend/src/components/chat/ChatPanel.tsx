@@ -1,9 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { MessageList } from './MessageList.js';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { InputBar } from './InputBar.js';
 import { AgentConsole } from './AgentConsole.js';
-import type { ChatMessage } from '../../hooks/useChatStore.js';
-import type { ToolEvent } from '../../hooks/useChatStore.js';
+import type { ChatMessage, ToolEvent } from '../../types/index.js';
+
+// Lazy-load MessageList so `marked` (large) is not in the initial bundle —
+// it's only fetched once the user actually opens a chat surface.
+const MessageList = lazy(() =>
+  import('./MessageList.js').then((m) => ({ default: m.MessageList }))
+);
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -51,11 +55,28 @@ export function ChatPanel({
         Chat
       </div>
 
-      <MessageList
-        messages={messages}
-        streamingContent={streamingContent}
-        bottomRef={bottomRef}
-      />
+      <Suspense
+        fallback={
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-tertiary)',
+              fontSize: 'var(--text-sm)',
+            }}
+          >
+            Loading conversation…
+          </div>
+        }
+      >
+        <MessageList
+          messages={messages}
+          streamingContent={streamingContent}
+          bottomRef={bottomRef}
+        />
+      </Suspense>
 
       <AgentConsole toolEvents={toolEvents} isStreaming={isStreaming} />
 

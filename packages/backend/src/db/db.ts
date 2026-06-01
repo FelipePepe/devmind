@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname, resolve } from 'node:path';
 import { config } from '../config.js';
@@ -17,7 +17,11 @@ export function getDb(): Database.Database {
   _db = new Database(config.DB_PATH);
   _db.pragma('foreign_keys = ON');
   _db.pragma('busy_timeout = 5000');
-  _db.pragma('journal_mode = WAL');
+  try {
+    _db.pragma('journal_mode = WAL');
+  } catch (err) {
+    logger.warn({ err, dbPath: config.DB_PATH }, 'SQLite WAL unavailable, continuing with default journal mode');
+  }
 
   runMigrations(_db);
   return _db;
@@ -29,16 +33,25 @@ function runMigrations(db: Database.Database): void {
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
 
-  const applied = (
-    db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: string }>
-  ).map((r) => r.version);
+  const applied = new Set(
+    (db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: string }>).map(
+      (r) => r.version
+    )
+  );
 
-  if (!applied.includes('001_initial')) {
-    const __dir = dirname(fileURLToPath(import.meta.url));
-    const sql = readFileSync(join(__dir, 'migrations', '001_initial.sql'), 'utf8');
+  const __dir = dirname(fileURLToPath(import.meta.url));
+  const migrationsDir = join(__dir, 'migrations');
+  const files = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  for (const file of files) {
+    const version = file.replace('.sql', '');
+    if (applied.has(version)) continue;
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
     db.exec(sql);
-    db.prepare("INSERT INTO schema_migrations (version) VALUES ('001_initial')").run();
-    logger.info('Applied migration 001_initial');
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+    logger.info({ version }, 'Applied migration');
   }
 }
 

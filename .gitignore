@@ -23,6 +23,10 @@ build/
 *.db
 *.db-shm
 *.db-wal
+data/.xdp-*
+
+# Local agent memory/artifacts
+.engram/
 
 # Logs
 *.log
@@ -30,3 +34,15 @@ logs/
 
 # Vite cache
 .vite/
+
+# SonarQube scanner work dir
+.scannerwork/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+
+# Core dumps and worker runtime artifacts
+core.*
+packages/workers/generated-projects/
+packages/workers/*.db

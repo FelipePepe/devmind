@@ -29,6 +29,10 @@ export class FlagsRepo {
       .run(key, value, description ?? null, now);
   }
 
+  delete(key: string): void {
+    this.db.prepare('DELETE FROM feature_flags WHERE key = ?').run(key);
+  }
+
   list(): FeatureFlag[] {
     return this.db
       .prepare('SELECT * FROM feature_flags ORDER BY key ASC')

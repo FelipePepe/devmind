@@ -24,14 +24,19 @@ export interface RefreshPayload {
 export async function sign(userId: string, isAdmin: boolean): Promise<TokenPair> {
   const secret = getSecret();
 
+  // jti uniqueness: iat/exp are second-precision, so two pair issues for the
+  // same user within one second would produce identical refresh JWTs and
+  // collide on the UNIQUE token_hash index in refresh_tokens.
   const accessToken = await new SignJWT({ sub: userId, isAdmin })
     .setProtectedHeader({ alg: 'HS256' })
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(Math.floor((Date.now() + config.JWT_ACCESS_TTL_MS) / 1000))
     .sign(secret);
 
   const refreshToken = await new SignJWT({ sub: userId })
     .setProtectedHeader({ alg: 'HS256' })
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(Math.floor((Date.now() + config.JWT_REFRESH_TTL_MS) / 1000))
     .sign(secret);

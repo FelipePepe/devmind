@@ -250,3 +250,73 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* === AUTH FORMS === */
+.auth-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: var(--space-4);
+  background: var(--bg-app);
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  width: 360px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.auth-field label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.auth-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  box-sizing: border-box;
+}
+
+.auth-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  font-size: var(--text-xs);
+  color: var(--color-error, #e05252);
+}
+
+/* Spec 004 — phase 11: per-message revert affordance.
+   Button is hidden by default and revealed on hover/focus of its message. */
+.message-revertable:hover .revert-button,
+.message-revertable:focus-within .revert-button {
+  opacity: 1;
+}

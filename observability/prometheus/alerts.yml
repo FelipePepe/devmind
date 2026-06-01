@@ -1,0 +1,47 @@
+groups:
+  - name: devmind
+    rules:
+      - alert: DevmindBackendDown
+        expr: up{job="devmind"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DevMind backend is down"
+          description: "Prometheus cannot scrape /api/metrics — backend container likely crashed."
+
+      - alert: DevmindWorkersStalled
+        expr: devmind_workers_queue_pending > 5 and devmind_workers_queue_processing == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DevMind workers appear stalled"
+          description: "{{ $value }} jobs pending but 0 processing for 5+ minutes."
+
+      - alert: DevmindQueueBacklog
+        expr: devmind_workers_queue_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DevMind job queue backlog"
+          description: "{{ $value }} jobs queued — workers may be too slow or crashed."
+
+      - alert: DevmindOllamaDown
+        expr: devmind_ollama_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ollama is unreachable from DevMind backend"
+          description: "AI features (code generation, embeddings) will fail."
+
+      - alert: DevmindDbLarge
+        expr: devmind_db_size_bytes > 5e9
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DevMind SQLite database exceeds 5 GB"
+          description: "Current size: {{ $value | humanize1024 }}B. Consider pruning snapshots or exporting data."

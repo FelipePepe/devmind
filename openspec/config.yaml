@@ -5,16 +5,23 @@ project: devmind
 context: |
   Tech stack: Hono + Node.js (TypeScript strict), React, pnpm monorepo
   Architecture: Backend (packages/backend), Frontend (packages/frontend), Workers sidecar (packages/workers)
+  Package manager: pnpm only — never npm
   LLM: Ollama local (qwen2.5-coder, qwen3, nomic-embed-text) via LangGraph
   Persistence: SQLite (better-sqlite3) + hnswlib-node vector store
-  Auth: Passkeys / WebAuthn (no passwords), JWT sessions
-  Realtime: WebSockets bidirectional + Web Push notifications
+  Auth: Username/password + TOTP MFA, JWT sessions
+  Realtime: SSE for chat streaming, WebSockets for notifications, Web Push fallback
   Storage: Local filesystem (NAS/maya)
   Jobs: SQLite-backed queue (separate sidecar process)
-  Features: Feature flags via SQLite table, multi-user
+  Product direction: Project-first app builder inspired by Google Stitch, Claude Design, and Firebase
+  Features: Feature flags via SQLite table, multi-user, local coding agent, semantic code search
   Network: .casa intranet only, secrets via Infisical (devmind-pxgt)
 
 strict_tdd: false
+
+package_manager:
+  name: pnpm
+  version: "10.0.0"
+  policy: "never npm"
 
 testing:
   strict_tdd: false
@@ -59,7 +66,7 @@ rules:
   design:
     - Include sequence diagrams for complex flows (WebSocket, LangGraph agent flows)
     - Document architecture decisions with rationale
-    - Consider WebAuthn / Passkeys auth flow implications
+    - Consider auth flow implications and migration impact on current TOTP/JWT stack
   tasks:
     - Group tasks by phase (infrastructure, implementation, testing)
     - Use hierarchical numbering (1.1, 1.2, etc.)
@@ -69,11 +76,24 @@ rules:
     - Follow existing TypeScript strict conventions (exactOptionalPropertyTypes, noUncheckedIndexedAccess)
     - Use Zod for all input validation
     - Use Pino for structured logging
+    - Use pnpm only — never npm or npx in this project
+    - "Boy Scout Rule: leave the code cleaner than you found it — fix obvious smells in files you touch (naming, dead code, missing Zod, bare catch), but don't refactor beyond the task scope"
+    - "Clean code and patterns: meaningful names, single responsibility, small functions, no magic numbers/strings — apply established patterns (Repository, Factory, Strategy, Middleware chain) where they reduce duplication or clarify intent; don't force a pattern where plain code is clearer"
+    - Security first, security by default, security by design:
+        - All new endpoints require authentication unless explicitly justified
+        - Input validated with Zod at every HTTP and tool boundary
+        - No secrets in code, logs, or error messages — use Infisical
+        - Least privilege: each component only accesses what it needs
+        - Fail closed: when in doubt, deny and log
+        - Security headers (HSTS, CSP, X-Frame-Options) on every response
+        - Rate limit all auth and mutation endpoints
+        - Audit log for every sensitive action (tool calls, admin ops, auth events)
     tdd: false
     test_command: ""
   verify:
     test_command: ""
     build_command: "pnpm -r build"
+    package_manager_note: "Prefer `pnpm exec` and `pnpm dlx`; never use `npm` or `npx`"
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas (large removals)

@@ -1,78 +1,53 @@
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { SessionSidebar } from '../components/session/SessionSidebar.js';
-import { useSession } from '../hooks/useSession.js';
-import { useChatStore } from '../hooks/useChatStore.js';
-import { apiFetch } from '../lib/api.js';
+import { useChatStore } from '../stores/chat.js';
+import { useSessionStore } from '../stores/session.js';
+import { parseArtifacts } from '../lib/artifacts.js';
 
-interface Session {
-  id: string;
-  title: string;
-  created_at: string;
-}
+// Lazy: pulls highlight.js + language defs only when an artifact is rendered.
+const ArtifactViewer = lazy(() =>
+  import('../components/artifacts/ArtifactViewer.js').then((m) => ({
+    default: m.ArtifactViewer,
+  }))
+);
 
 export default function Chat() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
 
-  const { messages: rawMessages, reloadMessages } = useSession(currentSessionId);
-  const messages = rawMessages as import('../hooks/useChatStore.js').ChatMessage[];
-  const { streamingContent, isStreaming, error, toolEvents, send } = useChatStore(reloadMessages);
+  const { sessions, currentSessionId, messages, loadSessions, selectSession, createSession, deleteSession, reloadMessages } = useSessionStore();
+  const { streamingContent, isStreaming, error, toolEvents, send } = useChatStore();
 
   useEffect(() => {
-    apiFetch<Session[]>('/api/sessions')
-      .then((data) => {
-        setSessions(data);
-        if (data.length > 0 && !currentSessionId) {
-          setCurrentSessionId(data[0]?.id ?? null);
-        }
-      })
-      .catch(() => null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const createSession = useCallback(async () => {
-    const session = await apiFetch<Session>('/api/sessions', {
-      method: 'POST',
-      body: JSON.stringify({ title: 'New Session' }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    setSessions((prev) => [session, ...prev]);
-    setCurrentSessionId(session.id);
-  }, []);
+    void loadSessions();
+  }, [loadSessions]);
 
   const handleSubmit = useCallback(() => {
     if (!input.trim() || !currentSessionId || isStreaming) return;
     const msg = input;
     setInput('');
-    void send(currentSessionId, msg);
-  }, [input, currentSessionId, isStreaming, send]);
+    void send(currentSessionId, msg, reloadMessages);
+  }, [input, currentSessionId, isStreaming, send, reloadMessages]);
+
+  const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
+  const artifacts = lastAssistantMsg ? parseArtifacts(lastAssistantMsg.content) : [];
+  const liveArtifacts = isStreaming ? parseArtifacts(streamingContent) : [];
+  const displayArtifacts = liveArtifacts.length > 0 ? liveArtifacts : artifacts;
 
   return (
     <>
       <SessionSidebar
         sessions={sessions}
         currentId={currentSessionId}
-        onSelect={setCurrentSessionId}
+        onSelect={selectSession}
         onCreate={() => void createSession()}
+        onDelete={(id) => void deleteSession(id)}
       />
-
-      <main className="main-area">
-        <div
-          style={{
-            color: 'var(--text-tertiary)',
-            fontSize: 'var(--text-sm)',
-            textAlign: 'center',
-            padding: 'var(--space-8)',
-          }}
-        >
-          {currentSessionId
-            ? 'Editor & Terminal coming in Fase 5'
-            : 'Select or create a session to start'}
-        </div>
+      <main className="main-area" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <Suspense fallback={null}>
+          <ArtifactViewer artifacts={displayArtifacts} isStreaming={isStreaming && liveArtifacts.length > 0} />
+        </Suspense>
       </main>
-
       <ChatPanel
         messages={messages}
         streamingContent={streamingContent}

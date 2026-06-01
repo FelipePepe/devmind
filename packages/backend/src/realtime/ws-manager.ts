@@ -23,13 +23,17 @@ export class WsManager {
       this.connections.set(userId, set);
     }
     set.add(ws);
+    logger.info({ userId, connections: this.connections.size }, 'WS: user connected');
   }
 
   unregister(userId: string, ws: WebSocket): void {
     const set = this.connections.get(userId);
     if (!set) return;
     set.delete(ws);
-    if (set.size === 0) this.connections.delete(userId);
+    if (set.size === 0) {
+      this.connections.delete(userId);
+      logger.info({ userId, connections: this.connections.size }, 'WS: user disconnected');
+    }
   }
 
   broadcast(userId: string, event: unknown): void {

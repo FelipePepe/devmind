@@ -79,11 +79,20 @@ export class JobQueueClient {
   }
 
   markFailed(id: string, error: string): void {
+    const job = this.db.prepare('SELECT * FROM job_queue WHERE id = ?').get(id) as Job | undefined;
     this.db
       .prepare(
         `UPDATE job_queue SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`
       )
       .run(error, new Date().toISOString(), id);
+    if (job) {
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO dead_letter_jobs (job_id, type, payload, retry_count, error)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .run(job.id, job.type, job.payload, job.retry_count, error);
+    }
   }
 
   hasTodayArchiveJob(): boolean {

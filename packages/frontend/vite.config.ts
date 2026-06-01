@@ -1,15 +1,35 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': 'http://localhost:3000',
-      '/auth': 'http://localhost:3000',
-      '/admin': 'http://localhost:3000',
-      '/ws': { target: 'ws://localhost:3000', ws: true },
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const pkg = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8')
+) as { version: string };
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, repoRoot, '');
+  const backendPort = env['PORT'] || '3001';
+  const backendUrl = env['VITE_BACKEND_URL'] || `http://localhost:${backendPort}`;
+  const backendWsUrl = backendUrl.replace(/^http/, 'ws');
+
+  return {
+    plugins: [react()],
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
     },
-  },
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      allowedHosts: ['devmind.casa'],
+      proxy: {
+        '/api': backendUrl,
+        '/auth': backendUrl,
+        '/admin': backendUrl,
+        '/flags': backendUrl,
+        '/ws': { target: backendWsUrl, ws: true },
+      },
+    },
+  };
 });

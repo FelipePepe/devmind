@@ -1,5 +1,30 @@
 # DevMind — Copilot Instructions
 
+## ⚡ MANDATORY WORKFLOW — Run at every session start
+
+```bash
+bash ~/.copilot/hooks/copilot/session-start.sh   # engram context
+bash ~/.copilot/hooks/copilot/gitflow-check.sh   # verify branch
+ls openspec/config.yaml && cat openspec/config.yaml  # SDD context
+```
+
+**Rules (in order):**
+1. If gitflow-check fails or says "no git repo" → fix branch/init git BEFORE any file edit.
+2. If `openspec/` exists and no active SDD change → run `sdd new "<feature>"` BEFORE implementing.
+3. If there IS an active SDD change → resume it (`sdd status`) before coding.
+4. At session end → `bash ~/.copilot/hooks/copilot/session-end.sh`
+
+**Protected branches (main, develop) — PR ONLY:**
+- NEVER `git merge` locally onto main or develop.
+- NEVER `git commit` or `git push` directly to main or develop.
+- Feature work → `gh pr create --base develop --title "<tipo>: <descripción>"`
+- Release → `gh pr create --base main --title "release: vX.Y.Z"`
+- After PR is merged on GitHub → `git checkout develop && git pull` to sync locally.
+
+**Never implement a feature without an active SDD change unless the user explicitly skips SDD.**
+
+---
+
 ## Architecture
 
 pnpm monorepo with three packages that run as separate processes:

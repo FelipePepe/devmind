@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import { useMemo } from 'react';
-import type { ChatMessage } from '../../hooks/useChatStore.js';
+import type { ChatMessage } from '../../types/index.js';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -57,7 +57,7 @@ function StreamingMessage({ content }: StreamingMessageProps) {
 interface MessageListProps {
   messages: ChatMessage[];
   streamingContent?: string;
-  bottomRef: React.RefObject<HTMLDivElement | null>;
+  bottomRef: React.RefObject<HTMLDivElement>;
 }
 
 export function MessageList({ messages, streamingContent, bottomRef }: MessageListProps) {
