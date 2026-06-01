@@ -236,6 +236,12 @@ export default function Builder() {
   const [editorContent, setEditorContent] = useState('');
   const [isSavingFile, setIsSavingFile] = useState(false);
 
+  const [gitRemoteUrl, setGitRemoteUrl] = useState('');
+  const [isPushingGit, setIsPushingGit] = useState(false);
+  const [gitPushResult, setGitPushResult] = useState<{ commit: string; remoteUrl: string } | null>(null);
+  const [gitPushError, setGitPushError] = useState<string | null>(null);
+  const [showGitPush, setShowGitPush] = useState(false);
+
   const [screenName, setScreenName] = useState('');
   const [screenPath, setScreenPath] = useState('/screen');
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -348,6 +354,24 @@ export default function Builder() {
     setSelectedFile(file);
     setEditorContent(file.content);
     setCenterTab('editor');
+  };
+
+  const pushToGit = async () => {
+    if (!id || !gitRemoteUrl.trim()) return;
+    setIsPushingGit(true);
+    setGitPushError(null);
+    setGitPushResult(null);
+    try {
+      const result = await apiFetch<{ ok: boolean; commit: string; remoteUrl: string }>(
+        `/api/projects/${id}/git/push`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remoteUrl: gitRemoteUrl.trim() }) }
+      );
+      setGitPushResult({ commit: result.commit, remoteUrl: result.remoteUrl });
+    } catch (e) {
+      setGitPushError(e instanceof Error ? e.message : 'Push failed');
+    } finally {
+      setIsPushingGit(false);
+    }
   };
 
   const saveFile = async () => {
@@ -973,22 +997,58 @@ export default function Builder() {
           )}
         </div>
 
-        {/* Back link + export */}
-        <div style={{ padding: 'var(--space-3)', borderTop: '1px solid var(--border-subtle)', flexShrink: 0, display: 'flex', gap: 'var(--space-2)' }}>
-          <Link className="btn btn-ghost btn-sm" to="/projects" style={{ flex: 1, justifyContent: 'center' }}>
-            ← Projects
-          </Link>
-          {id && (
-            <a
-              href={`/api/projects/${id}/export`}
-              download
-              title="Export project as JSON"
-              className="btn btn-ghost btn-sm"
-              style={{ flexShrink: 0 }}
-            >
-              ↓ Export
-            </a>
+        {/* Back link + export + git */}
+        <div style={{ borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+          {showGitPush && id && (
+            <div style={{ padding: 'var(--space-3)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-caps)' }}>Push to git remote</div>
+              <input
+                className="input"
+                placeholder="https://github.com/user/repo.git"
+                value={gitRemoteUrl}
+                onChange={(e) => setGitRemoteUrl(e.target.value)}
+                disabled={isPushingGit}
+                style={{ fontSize: 'var(--text-xs)' }}
+              />
+              {gitPushError && <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>{gitPushError}</div>}
+              {gitPushResult && (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  ✓ Pushed <code style={{ fontFamily: 'var(--font-mono)' }}>{gitPushResult.commit.slice(0, 7)}</code>
+                </div>
+              )}
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => void pushToGit()}
+                disabled={isPushingGit || !gitRemoteUrl.trim()}
+                style={{ justifyContent: 'center' }}
+              >
+                {isPushingGit ? 'Pushing…' : '⬆ Push'}
+              </button>
+            </div>
           )}
+          <div style={{ padding: 'var(--space-3)', display: 'flex', gap: 'var(--space-2)' }}>
+            <Link className="btn btn-ghost btn-sm" to="/projects" style={{ flex: 1, justifyContent: 'center' }}>
+              ← Projects
+            </Link>
+            {id && (
+              <>
+                <a href={`/api/projects/${id}/archive`} download title="Download as tar.gz" className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: 'var(--text-xs)' }}>
+                  .gz
+                </a>
+                <a href={`/api/projects/${id}/export`} download title="Export as JSON" className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}>
+                  ↓
+                </a>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  title="Push to git remote"
+                  style={{ flexShrink: 0, color: showGitPush ? 'var(--accent)' : undefined }}
+                  onClick={() => { setShowGitPush((v) => !v); setGitPushError(null); setGitPushResult(null); }}
+                >
+                  ⬆
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </aside>
 

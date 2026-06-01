@@ -96,7 +96,7 @@
 ## 🟡 Deseables — calidad de producto
 
 ### UX / DEX
-- [ ] **Onboarding flow** — primer login, primer proyecto, tour de la UI.
+- [x] **Onboarding flow** — empty state en Projects muestra guía de 4 pasos (crear, describir, iterar, exportar/push) cuando no hay proyectos (2026-06-01).
 - [x] **Error boundaries** en React. `ErrorBoundary` wraps cada página vía `AppLayout` + `App` root + `LogPanel`. Un crash en Builder no borra el TopBar.
 - [x] **Empty states** en builder (sin proyectos, sin archivos, sin tools). Files, screens, API routes, database, env, validation, runtime, snapshots — todos tienen mensaje vacío.
 - [x] **Mensajes de error útiles** — rutas del builder retornan `{ error: 'X not found' }` 404 / `{ error: 'Invalid request', details: … }` 400 explícitos. `app.onError` devuelve "Internal server error" solo para excepciones inesperadas en prod (correcto). `apiFetch` extrae `body.error` en frontend.
@@ -108,7 +108,7 @@
 - [x] Playwright validation layer completo (spec 005 cerrado 2026-05-30). Migration 023: `project_tests` + `project_test_runs` + `messages.evidence_json`. BrowserPool (Chromium 148), worker handler `validate-with-playwright`, 3 agent tools, Tests tab en Builder, EvidenceBlock en chat. `docker compose build workers` → chromium resolvable + `playwright pool ready (size=2)` verificados 2026-05-31. Verificación E2E con Ollama live (9.5/9.8-9.11) pendiente operador.
 
 ### Tool governance v2 (follow-up de spec 006)
-- [ ] **UI de confirmación per-call** para `destructive` cuando `autonomy_level=confirm-destructive` (que aún no existe como valor del flag).
+- [x] **UI de confirmación per-call** — nuevo valor `confirm-destructive` en autonomy_level: el executor emite un mensaje de confirmación al chat pidiendo "yes, run X" antes de ejecutar tools destructivos. Soft-confirm vía agent message (2026-06-01).
 - [x] **Per-project autonomy overrides** — flag `tools.autonomy_level.${projectId}` leída por `ToolExecutor` antes del flag global. `PUT/GET /admin/projects/:id/autonomy` para gestionar. `FlagsRepo.delete()` añadido (2026-06-01).
 - [x] **Retention/purga del audit log** — `TOOL_AUDIT_RETENTION_DAYS` (default 30d) + timer horario `pruneOlderThan()` en `index.ts`. Desactivable con `TOOL_AUDIT_RETENTION_DAYS=0`.
 
@@ -134,7 +134,7 @@
 - [ ] Modo invitado / demo público.
 - [x] Métricas de uso por usuario — `GET /admin/stats` agrega projects/sessions/messages/agent_runs/tool_calls + last_active por usuario. Página `/admin/stats` con tabla + totals en el admin (2026-06-01).
 - [x] Plantillas de proyecto (starter kits) — 4 templates: Blank, Web app, Node.js REST API, Fullstack React+Express. `GET /api/project-templates` + `POST /api/project-templates/:id/instantiate`. Selector de template en la UI de creación (2026-06-01).
-- [ ] Integración con git remoto (push del proyecto generado a GitHub).
+- [x] Integración con git remoto — `GET /api/projects/:id/archive` (tar.gz) + `POST /api/projects/:id/git/push {remoteUrl}` (materializa archivos DB → git init → commit → push). Builder sidebar: botón ⬆ expandible con input de remote URL + botones .gz y ↓ (2026-06-01).
 - [ ] i18n del frontend.
 
 ---

@@ -80,7 +80,9 @@ export class ToolExecutor {
     }
 
     // ----- 4. Autonomy gate ----------------------------------------------
-    if (safety === 'destructive' && this.autonomyLevel() === 'block-destructive') {
+    const autonomy = this.autonomyLevel();
+
+    if (safety === 'destructive' && autonomy === 'block-destructive') {
       const errorMsg = `Tool ${tool.name} blocked by operator policy: tools.autonomy_level=block-destructive`;
       this.writeFinal(ctx, tool.name, safety, call.function.arguments, {
         status: 'blocked',
@@ -89,6 +91,20 @@ export class ToolExecutor {
         durationMs: 0,
       });
       return errorResult(call, { error: errorMsg, blocked: true });
+    }
+
+    if (safety === 'destructive' && autonomy === 'confirm-destructive') {
+      const confirmMsg =
+        `⚠ Tool \`${tool.name}\` requires your approval (autonomy_level=confirm-destructive). ` +
+        `Args: \`${call.function.arguments}\`. ` +
+        `Reply with "yes, run ${tool.name}" to approve or "no" to skip.`;
+      this.writeFinal(ctx, tool.name, safety, call.function.arguments, {
+        status: 'blocked',
+        outputExcerpt: confirmMsg,
+        error: confirmMsg,
+        durationMs: 0,
+      });
+      return errorResult(call, { error: confirmMsg, needsConfirmation: true, toolName: tool.name });
     }
 
     // ----- 5-8. Execute under audit + timeout ----------------------------
@@ -127,7 +143,7 @@ export class ToolExecutor {
   // Audit + flag helpers — never throw; failures here MUST NOT break the agent.
   // ---------------------------------------------------------------------------
 
-  private autonomyLevel(): 'auto' | 'block-destructive' {
+  private autonomyLevel(): 'auto' | 'block-destructive' | 'confirm-destructive' {
     if (!this.flags) return 'auto';
     try {
       // Project-level override takes precedence over the global flag.
@@ -140,7 +156,9 @@ export class ToolExecutor {
         if (!flag) continue;
         let parsed: unknown = flag.value;
         try { parsed = JSON.parse(flag.value); } catch { /* raw string fallback */ }
-        return parsed === 'block-destructive' ? 'block-destructive' : 'auto';
+        if (parsed === 'block-destructive') return 'block-destructive';
+        if (parsed === 'confirm-destructive') return 'confirm-destructive';
+        return 'auto';
       }
       return 'auto';
     } catch (err) {

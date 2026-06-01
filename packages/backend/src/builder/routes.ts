@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { PROJECT_TEMPLATES } from './templates.js';
+import { materializeToTemp, createTarGz, gitPush, cleanupTemp } from './git.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { authMiddleware } from '../auth/middleware.js';
 import { config } from '../config.js';
@@ -1281,6 +1282,77 @@ export function createBuilderRouter(
     }
 
     return c.json({ id: pid, name: project.name }, 201);
+  });
+
+  // Project archive — download all files as tar.gz
+  router.get('/projects/:id/archive', authMiddleware, (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+
+    const files = projectFiles.findByProject(projectId).map((f) => ({ path: f.path, content: f.content }));
+    if (files.length === 0) return c.json({ error: 'Project has no files to archive' }, 400);
+
+    let dir: string | null = null;
+    try {
+      dir = materializeToTemp(files, project.name);
+      const buf = createTarGz(dir);
+      const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+      const date = new Date().toISOString().slice(0, 10);
+      return new Response(buf.buffer as ArrayBuffer, {
+        headers: {
+          'Content-Type': 'application/gzip',
+          'Content-Disposition': `attachment; filename="${slug}-${date}.tar.gz"`,
+        },
+      });
+    } finally {
+      if (dir) cleanupTemp(dir);
+    }
+  });
+
+  // Git push — materialize project files + push to remote
+  router.post('/projects/:id/git/push', authMiddleware, async (c) => {
+    const userId = c.get('userId');
+    const projectId = c.req.param('id');
+    if (!projectId) return c.json({ error: 'Missing id' }, 400);
+    const project = projects.findById(userId, projectId);
+    if (!project) return c.json({ error: 'Project not found' }, 404);
+
+    const body = await c.req.json().catch(() => ({})) as {
+      remoteUrl?: string;
+      branch?: string;
+      authorName?: string;
+      authorEmail?: string;
+    };
+    const { remoteUrl, branch, authorName, authorEmail } = body;
+
+    if (!remoteUrl || !/^https:\/\/.+/.test(remoteUrl)) {
+      return c.json({ error: 'remoteUrl must be an https:// URL' }, 400);
+    }
+
+    const files = projectFiles.findByProject(projectId).map((f) => ({ path: f.path, content: f.content }));
+    if (files.length === 0) return c.json({ error: 'Project has no files to push' }, 400);
+
+    let dir: string | null = null;
+    try {
+      dir = materializeToTemp(files, project.name);
+      const hash = gitPush({
+        dir,
+        projectName: project.name,
+        remoteUrl,
+        ...(branch !== undefined && { branch }),
+        ...(authorName !== undefined && { authorName }),
+        ...(authorEmail !== undefined && { authorEmail }),
+      });
+      return c.json({ ok: true, commit: hash, branch: branch ?? 'main', remoteUrl });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Git push failed: ${msg}` }, 500);
+    } finally {
+      if (dir) cleanupTemp(dir);
+    }
   });
 
   // ── Playwright validation routes ────────────────────────────────────────────

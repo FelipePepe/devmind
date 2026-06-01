@@ -226,8 +226,20 @@ export default function Projects() {
               ))}
             </div>
           ) : projects.length === 0 ? (
-            <div style={{ padding: 'var(--space-6)', background: 'linear-gradient(135deg, var(--bg-surface), var(--bg-surface-2))', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-lg)', color: 'var(--text-secondary)' }}>
-              No projects yet. Create the first one from the panel on the left.
+            <div style={{ padding: 'var(--space-6)', background: 'linear-gradient(135deg, var(--bg-surface), var(--bg-surface-2))', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: 'var(--text-lg)', fontWeight: 'var(--weight-semibold)', marginBottom: 'var(--space-3)' }}>Welcome to DevMind</div>
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 'var(--leading-relaxed)', marginBottom: 'var(--space-4)' }}>
+                DevMind is a project-first AI coding assistant. Here's how it works:
+              </div>
+              <ol style={{ paddingLeft: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: 'var(--leading-relaxed)' }}>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Create a project</strong> — pick a starter template or start blank. Give it a name.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Describe what you want</strong> — open the builder and chat with the agent. It generates files, services, schemas, and previews.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Iterate</strong> — the agent reads your files and keeps context. Snapshots are taken automatically before each run so you can always revert.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Export or push</strong> — download a JSON bundle, a tar.gz archive, or push directly to a git remote when you're ready.</li>
+              </ol>
+              <div style={{ marginTop: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
+                Start by typing a project name in the panel on the left and clicking <strong>Create project</strong>.
+              </div>
             </div>
           ) : (
             projects.map((project) => (
@@ -255,6 +267,21 @@ export default function Projects() {
                   </p>
                 </Link>
                 <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-3)', display: 'flex', gap: '2px' }}>
+                  <a
+                    href={`/api/projects/${project.id}/archive`}
+                    download
+                    title="Download as tar.gz archive"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-tertiary)', fontSize: '11px', padding: '4px 6px',
+                      borderRadius: 'var(--radius-sm)', lineHeight: 1,
+                      opacity: 0.6, textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.opacity = '1'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.opacity = '0.6'; }}
+                  >
+                    .gz
+                  </a>
                   <a
                     href={`/api/projects/${project.id}/export`}
                     download
