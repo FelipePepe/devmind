@@ -79,7 +79,7 @@
 ### CI/CD
 - [x] **Tests automatizados**. Mínimo viable: unit en repos críticos (snapshots, tool-audit, project-files), integración del agent loop con tool mocks, smoke E2E del flujo principal (login → crear proyecto → prompt → ver archivo generado). Añadido primer baseline `pnpm test` + tests de password policy y refresh token hashing; falta ampliar cobertura a los repos críticos y E2E.
 - [x] **Deploy automation** — `.github/workflows/deploy.yml` se dispara en push a `main` y tags `v*`. SSH al host de producción → `git pull` → `docker compose up --build` → health check. Requiere GitHub secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (y opcionalmente `DEPLOY_PORT`). Configurar en GitHub repo → Settings → Environments → production.
-- [ ] **Branch protection** en `main`: requiere PR, CI verde, ≥1 review. En `develop`: requiere CI verde.
+- [x] **Branch protection** — `main`: PR requerida, CI `quality` verde, ≥1 review, dismiss stale, require last push approval, no force push/delete, conversations resolved. `develop`: CI `quality` verde, no force push/delete. Configurado 2026-06-01 vía GitHub API.
 - [ ] **SonarQube CI gate** — job marcado `continue-on-error: true` en `build.yml` para no bloquear PRs cuando el runner de intranet no está disponible. Para activar: (1) self-hosted runner con acceso a `http://192.168.1.56:9000`, (2) secrets `SONAR_TOKEN` + `SONAR_HOST_URL` en GitHub repo settings. Proyecto ya existe en SonarQube desde 2026-05-26.
 
 ### Workers
